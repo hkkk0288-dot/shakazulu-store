@@ -1,0 +1,1019 @@
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import {
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
+import { SEED_COUPONS, SEED_ORDERS, SEED_PRODUCTS } from '../data/seedData';
+import {
+  ADMIN_EMAIL,
+  auth,
+  db,
+  googleProvider,
+  handleFirestoreError,
+  OperationType,
+} from '../firebase';
+import { getTranslations } from '../i18n/translations';
+import {
+  CartItem,
+  ComboBundle,
+  Coupon,
+  Currency,
+  DeliveryMethod,
+  Language,
+  Order,
+  OrderItemSnapshot,
+  OrderStatus,
+  OrderTimestamp,
+  OrderType,
+  PaymentMethod,
+  PreviewMode,
+  Product,
+  ProductBadge,
+  SizeOption,
+} from '../types';
+import { calculateLinePricing, convertTzsToCurrency } from '../utils/pricing';
+
+const STORAGE_KEYS = {
+  products: 'shakazulu_products_v1',
+  orders: 'shakazulu_orders_v1',
+  cart: 'shakazulu_cart_v1',
+  language: 'shakazulu_lang_v1',
+  currency: 'shakazulu_currency_v1',
+  vacuumPacked: 'shakazulu_vacuum_v1',
+  coupons: 'shakazulu_coupons_v1',
+};
+
+function safeReadStorage<T>(key: string, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeWriteStorage<T>(key: string, value: T): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function tsToIso(val: unknown): string {
+  if (val instanceof Timestamp) {
+    return val.toDate().toISOString();
+  }
+  if (typeof val === 'string') return val;
+  return new Date().toISOString();
+}
+
+export interface PlaceOrderInput {
+  customerName: string;
+  customerPhone: string;
+  deliveryMethod: DeliveryMethod;
+  location: string;
+  paymentMethod: PaymentMethod;
+  vacuumPacked: boolean;
+  vacuumFeeTzs: number;
+  deliveryFeeTzs: number | null;
+  notes?: string;
+}
+
+interface StoreContextValue {
+  products: Product[];
+  orders: Order[];
+  coupons: Coupon[];
+  cart: CartItem[];
+  language: Language;
+  currency: Currency;
+  vacuumPacked: boolean;
+  appliedCoupon: Coupon | null;
+  adminMode: boolean;
+  adminUnlocked: boolean;
+  previewMode: PreviewMode;
+  toastMessage: string | null;
+  user: User | null;
+  authReady: boolean;
+  isCloudAdmin: boolean;
+  cloudCatalogSynced: boolean;
+  t: ReturnType<typeof getTranslations>;
+  setLanguage: (lang: Language) => void;
+  setCurrency: (curr: Currency) => void;
+  setVacuumPacked: (val: boolean) => void;
+  setAdminMode: (val: boolean) => void;
+  unlockAdmin: () => void;
+  setPreviewMode: (mode: PreviewMode) => void;
+  showToast: (msg: string) => void;
+  signInWithGoogle: () => Promise<void>;
+  signOutUser: () => Promise<void>;
+  seedCatalogToCloud: () => Promise<void>;
+  loadOrderItems: (orderId: string) => Promise<OrderItemSnapshot[]>;
+  applyPromoCode: (rawCode: string) => boolean;
+  removePromoCode: () => void;
+  addBundleToCart: (bundle: ComboBundle) => void;
+  upsertCoupon: (coupon: Omit<Coupon, 'active'> & { active?: boolean }) => void;
+  toggleCouponActive: (code: string) => void;
+  addToCart: (productId: string, size: SizeOption, quantity: number) => void;
+  updateCartItemQuantity: (productId: string, size: SizeOption, quantity: number) => void;
+  removeFromCart: (productId: string, size: SizeOption) => void;
+  clearCart: () => void;
+  placeOrder: (input: PlaceOrderInput) => Promise<Order>;
+  updateProduct: (productId: string, updates: Partial<Product>) => void;
+  addProduct: (product: Omit<Product, 'id' | 'rating' | 'reviewCount' | 'badge'>) => Product;
+  updateOrderStatus: (orderId: string, nextStatus: OrderStatus) => void;
+  resetDemoData: () => void;
+  cartSummary: {
+    itemCount: number;
+    subtotalTzs: number;
+    savingsTzs: number;
+    promoDiscountTzs: number;
+    subtotalAfterPromoTzs: number;
+    hasOutOfStockItem: boolean;
+    snapshots: OrderItemSnapshot[];
+  };
+}
+
+const StoreContext = createContext<StoreContextValue | null>(null);
+
+export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [localProducts, setLocalProducts] = useState<Product[]>(() =>
+    safeReadStorage<Product[]>(STORAGE_KEYS.products, SEED_PRODUCTS)
+  );
+  const [cloudProducts, setCloudProducts] = useState<Product[] | null>(null);
+
+  const [localOrders, setLocalOrders] = useState<Order[]>(() =>
+    safeReadStorage<Order[]>(STORAGE_KEYS.orders, SEED_ORDERS)
+  );
+  const [cloudOrders, setCloudOrders] = useState<Order[] | null>(null);
+
+  const [localCoupons, setLocalCoupons] = useState<Coupon[]>(() =>
+    safeReadStorage<Coupon[]>(STORAGE_KEYS.coupons, SEED_COUPONS)
+  );
+  const [cloudCoupons, setCloudCoupons] = useState<Coupon[] | null>(null);
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
+
+  const [cart, setCart] = useState<CartItem[]>(() =>
+    safeReadStorage<CartItem[]>(STORAGE_KEYS.cart, [])
+  );
+  const [language, setLanguageState] = useState<Language>(() =>
+    safeReadStorage<Language>(STORAGE_KEYS.language, 'en')
+  );
+  const [currency, setCurrencyState] = useState<Currency>(() =>
+    safeReadStorage<Currency>(STORAGE_KEYS.currency, 'TZS')
+  );
+  const [vacuumPacked, setVacuumPackedState] = useState<boolean>(() =>
+    safeReadStorage<boolean>(STORAGE_KEYS.vacuumPacked, false)
+  );
+
+  const [adminMode, setAdminMode] = useState(false);
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('web');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  const isCloudAdmin = Boolean(
+    user && user.emailVerified && user.email?.toLowerCase() === ADMIN_EMAIL
+  );
+
+  // Sync Firebase Auth state
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser);
+      setAuthReady(true);
+      if (nextUser && nextUser.emailVerified && nextUser.email?.toLowerCase() === ADMIN_EMAIL) {
+        setAdminUnlocked(true);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Real-time Products listener (public catalog, zero PII)
+  useEffect(() => {
+    const productsRef = collection(db, 'products');
+    const unsub = onSnapshot(
+      productsRef,
+      (snapshot) => {
+        if (snapshot.empty) {
+          setCloudProducts(null);
+          return;
+        }
+        const loaded: Product[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          const badgeRaw = data.badge as string | undefined;
+          const badge: ProductBadge =
+            badgeRaw === 'best_seller' || badgeRaw === 'new' ? badgeRaw : null;
+          const seedMatch = SEED_PRODUCTS.find((sp) => sp.id === d.id);
+          const resolvedImage =
+            typeof data.image === 'string' && data.image.length > 0
+              ? data.image
+              : seedMatch?.image;
+          return {
+            id: d.id,
+            nameEn: String(data.nameEn || ''),
+            nameSw: String(data.nameSw || data.nameEn || ''),
+            descriptionEn: String(data.descriptionEn || ''),
+            descriptionSw: String(data.descriptionSw || data.descriptionEn || ''),
+            category: data.category || 'ubuyu_achari',
+            basePrice250g: Number(data.basePrice250g || 4000),
+            wholesaleDiscount: Number(data.wholesaleDiscount ?? 15),
+            inStock: Boolean(data.inStock),
+            rating: Number(data.rating ?? 5),
+            reviewCount: Number(data.reviewCount ?? 1),
+            badge,
+            emoji: String(data.emoji || '🍒'),
+            gradientFrom: String(data.gradientFrom || '#D95D39'),
+            gradientTo: String(data.gradientTo || '#8C1D18'),
+            originEn: String(data.originEn || 'Tanzania'),
+            originSw: String(data.originSw || 'Tanzania'),
+            image: resolvedImage,
+          };
+        });
+        setCloudProducts(loaded);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'products');
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  // Real-time Coupons listener
+  useEffect(() => {
+    const couponsRef = collection(db, 'coupons');
+    const unsub = onSnapshot(
+      couponsRef,
+      (snapshot) => {
+        if (snapshot.empty) {
+          setCloudCoupons(null);
+          return;
+        }
+        const loaded: Coupon[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            code: String(data.code || d.id),
+            discountPercent: Number(data.discountPercent || 10),
+            active: Boolean(data.active),
+            descriptionEn: String(data.descriptionEn || ''),
+            descriptionSw: String(data.descriptionSw || ''),
+          };
+        });
+        setCloudCoupons(loaded);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'coupons');
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  // Real-time Orders listener (ONLY attached when auth is ready and user is authenticated)
+  useEffect(() => {
+    if (!authReady || !user || !user.emailVerified) {
+      setCloudOrders(null);
+      return;
+    }
+
+    const ordersRef = collection(db, 'orders');
+    const ordersQuery = isCloudAdmin
+      ? query(ordersRef)
+      : query(ordersRef, where('userId', '==', user.uid));
+
+    const unsub = onSnapshot(
+      ordersQuery,
+      (snapshot) => {
+        const loaded: Order[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          const createdAtIso = tsToIso(data.createdAt);
+          const status = (data.status as OrderStatus) || 'pending';
+          const history: OrderTimestamp[] = [{ status: 'pending', at: createdAtIso }];
+          if (data.packedAt) {
+            history.push({ status: 'packed', at: tsToIso(data.packedAt) });
+          } else if (status === 'packed' || status === 'dispatched') {
+            history.push({ status: 'packed', at: tsToIso(data.updatedAt) });
+          }
+          if (data.dispatchedAt) {
+            history.push({ status: 'dispatched', at: tsToIso(data.dispatchedAt) });
+          } else if (status === 'dispatched') {
+            history.push({ status: 'dispatched', at: tsToIso(data.updatedAt) });
+          }
+
+          const feeVal = Number(data.deliveryFeeTzs);
+          return {
+            id: d.id,
+            userId: String(data.userId || ''),
+            customerName: String(data.customerName || 'Customer'),
+            customerPhone: String(data.customerPhone || '-'),
+            type: (data.type as OrderType) || 'retail',
+            deliveryMethod: data.deliveryMethod || 'dar_delivery',
+            location: String(data.location || ''),
+            paymentMethod: data.paymentMethod || 'mpesa',
+            vacuumPacked: Boolean(data.vacuumPacked),
+            vacuumFeeTzs: Number(data.vacuumFeeTzs || 0),
+            deliveryFeeTzs: feeVal < 0 ? null : feeVal,
+            subtotalTzs: Number(data.subtotalTzs || 0),
+            savingsTzs: Number(data.savingsTzs || 0),
+            totalTzs: Number(data.totalTzs || 0),
+            currency: data.currency === 'USD' ? 'USD' : 'TZS',
+            totalInOrderCurrency: Number(data.totalInOrderCurrency || 0),
+            status,
+            createdAt: createdAtIso,
+            statusHistory: history,
+            items: [],
+            itemCount: Number(data.itemCount || 1),
+            itemsSummary: String(data.itemsSummary || ''),
+            isCloudSynced: true,
+            notes: typeof data.notes === 'string' ? data.notes : undefined,
+          };
+        });
+
+        loaded.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setCloudOrders(loaded);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'orders');
+      }
+    );
+
+    return () => unsub();
+  }, [authReady, user, isCloudAdmin]);
+
+  const products = useMemo(() => {
+    const baseList = cloudProducts ?? localProducts;
+    if (!cloudProducts) {
+      // Ensure studio images are present for seeded IDs even if localStorage had older seed cache
+      return baseList.map((p) => {
+        if (p.image) return p;
+        const seedMatch = SEED_PRODUCTS.find((sp) => sp.id === p.id);
+        return seedMatch?.image ? { ...p, image: seedMatch.image } : p;
+      });
+    }
+    return baseList;
+  }, [cloudProducts, localProducts]);
+
+  const coupons = cloudCoupons ?? localCoupons;
+  const appliedCoupon = useMemo(
+    () =>
+      appliedCouponCode
+        ? coupons.find((c) => c.code === appliedCouponCode && c.active) ?? null
+        : null,
+    [appliedCouponCode, coupons]
+  );
+
+  const orders = useMemo(() => {
+    if (cloudOrders) {
+      return isCloudAdmin ? [...cloudOrders, ...localOrders.filter((o) => !o.isCloudSynced)] : cloudOrders;
+    }
+    return localOrders;
+  }, [cloudOrders, localOrders, isCloudAdmin]);
+
+  useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.products, localProducts);
+  }, [localProducts]);
+
+  useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.orders, localOrders);
+  }, [localOrders]);
+
+  useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.coupons, localCoupons);
+  }, [localCoupons]);
+
+  useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.cart, cart);
+  }, [cart]);
+
+  useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.language, language);
+  }, [language]);
+
+  useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.currency, currency);
+  }, [currency]);
+
+  useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.vacuumPacked, vacuumPacked);
+  }, [vacuumPacked]);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+  }, []);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = window.setTimeout(() => setToastMessage(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [toastMessage]);
+
+  const t = useMemo(() => getTranslations(language), [language]);
+
+  const setLanguage = useCallback((lang: Language) => setLanguageState(lang), []);
+  const setCurrency = useCallback((curr: Currency) => setCurrencyState(curr), []);
+  const setVacuumPacked = useCallback((val: boolean) => setVacuumPackedState(val), []);
+  const unlockAdmin = useCallback(() => setAdminUnlocked(true), []);
+
+  const signInWithGoogle = useCallback(async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      if (result.user) {
+        showToast(result.user.displayName || result.user.email || 'Signed in');
+      }
+    } catch (error) {
+      console.error('Google sign-in failed:', error);
+      showToast(language === 'sw' ? 'Imeshindikana kuingia na Google' : 'Google sign-in cancelled');
+    }
+  }, [language, showToast]);
+
+  const signOutUser = useCallback(async () => {
+    try {
+      await signOut(auth);
+      setAdminUnlocked(false);
+      showToast(t.cloudAuth.signOut);
+    } catch (error) {
+      console.error('Sign out failed:', error);
+    }
+  }, [showToast, t.cloudAuth.signOut]);
+
+  const seedCatalogToCloud = useCallback(async () => {
+    if (!isCloudAdmin) return;
+    try {
+      const batch = writeBatch(db);
+      SEED_PRODUCTS.forEach((p) => {
+        const ref = doc(db, 'products', p.id);
+        batch.set(ref, {
+          nameEn: p.nameEn.slice(0, 120),
+          nameSw: p.nameSw.slice(0, 120),
+          descriptionEn: p.descriptionEn.slice(0, 600),
+          descriptionSw: p.descriptionSw.slice(0, 600),
+          category: p.category,
+          basePrice250g: p.basePrice250g,
+          wholesaleDiscount: p.wholesaleDiscount,
+          inStock: p.inStock,
+          rating: p.rating,
+          reviewCount: p.reviewCount,
+          badge: p.badge ?? 'none',
+          emoji: p.emoji.slice(0, 16),
+          gradientFrom: p.gradientFrom,
+          gradientTo: p.gradientTo,
+          originEn: p.originEn.slice(0, 80),
+          originSw: p.originSw.slice(0, 80),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+      showToast(t.admin.products.updatedToast);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'products');
+    }
+  }, [isCloudAdmin, showToast, t.admin.products.updatedToast]);
+
+  const loadOrderItems = useCallback(
+    async (orderId: string): Promise<OrderItemSnapshot[]> => {
+      const existingOrder = orders.find((o) => o.id === orderId);
+      if (existingOrder && existingOrder.items.length > 0) {
+        return existingOrder.items;
+      }
+      if (!user || !user.emailVerified) return [];
+      const path = `orders/${orderId}/items`;
+      try {
+        const snap = await getDocs(collection(db, path));
+        return snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            productId: String(data.productId || ''),
+            nameEn: String(data.nameEn || ''),
+            nameSw: String(data.nameSw || ''),
+            size: (data.size as SizeOption) || '250g',
+            quantity: Number(data.quantity || 1),
+            unitPriceTzs: Number(data.unitPriceTzs || 0),
+            lineTotalTzs: Number(data.lineTotalTzs || 0),
+            isWholesale: Boolean(data.isWholesale),
+          };
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, path);
+      }
+    },
+    [orders, user]
+  );
+
+  const addToCart = useCallback(
+    (productId: string, size: SizeOption, quantity: number) => {
+      const target = products.find((p) => p.id === productId);
+      if (!target || !target.inStock) return;
+      const qtyToAdd = Math.max(1, quantity);
+      setCart((prev) => {
+        const idx = prev.findIndex((item) => item.productId === productId && item.size === size);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], quantity: updated[idx].quantity + qtyToAdd };
+          return updated;
+        }
+        return [...prev, { productId, size, quantity: qtyToAdd }];
+      });
+      showToast(`${language === 'sw' ? target.nameSw : target.nameEn} · ${t.product.addedToast}`);
+    },
+    [products, language, t.product.addedToast, showToast]
+  );
+
+  const updateCartItemQuantity = useCallback(
+    (productId: string, size: SizeOption, quantity: number) => {
+      setCart((prev) => {
+        if (quantity <= 0) {
+          return prev.filter((item) => !(item.productId === productId && item.size === size));
+        }
+        return prev.map((item) =>
+          item.productId === productId && item.size === size ? { ...item, quantity } : item
+        );
+      });
+    },
+    []
+  );
+
+  const removeFromCart = useCallback((productId: string, size: SizeOption) => {
+    setCart((prev) => prev.filter((item) => !(item.productId === productId && item.size === size)));
+  }, []);
+
+  const clearCart = useCallback(() => {
+    setCart([]);
+    setVacuumPackedState(false);
+    setAppliedCouponCode(null);
+  }, []);
+
+  const applyPromoCode = useCallback(
+    (rawCode: string): boolean => {
+      const normalized = rawCode.trim().toUpperCase();
+      const found = coupons.find((c) => c.code === normalized && c.active);
+      if (!found) {
+        return false;
+      }
+      setAppliedCouponCode(found.code);
+      showToast(`${t.conversion.promoApplied}: ${found.code} (-${found.discountPercent}%)`);
+      return true;
+    },
+    [coupons, showToast, t.conversion.promoApplied]
+  );
+
+  const removePromoCode = useCallback(() => {
+    setAppliedCouponCode(null);
+  }, []);
+
+  const addBundleToCart = useCallback(
+    (bundle: ComboBundle) => {
+      setCart((prev) => {
+        let next = [...prev];
+        bundle.items.forEach((bItem) => {
+          const prod = products.find((p) => p.id === bItem.productId);
+          if (!prod || !prod.inStock) return;
+          const idx = next.findIndex(
+            (c) => c.productId === bItem.productId && c.size === bItem.size
+          );
+          if (idx >= 0) {
+            next[idx] = { ...next[idx], quantity: next[idx].quantity + bItem.quantity };
+          } else {
+            next.push({
+              productId: bItem.productId,
+              size: bItem.size,
+              quantity: bItem.quantity,
+            });
+          }
+        });
+        return next;
+      });
+      const promo = coupons.find((c) => c.code === bundle.recommendedPromoCode && c.active);
+      if (promo) {
+        setAppliedCouponCode(promo.code);
+      }
+      showToast(`${language === 'sw' ? bundle.nameSw : bundle.nameEn} · ${t.conversion.bundleAddedToast}`);
+    },
+    [products, coupons, language, showToast, t.conversion.bundleAddedToast]
+  );
+
+  const upsertCoupon = useCallback(
+    (input: Omit<Coupon, 'active'> & { active?: boolean }) => {
+      const cleanCode = input.code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+      if (cleanCode.length < 3) return;
+      const pct = Math.max(1, Math.min(40, Math.round(input.discountPercent)));
+      const couponObj: Coupon = {
+        code: cleanCode,
+        discountPercent: pct,
+        active: input.active ?? true,
+        descriptionEn: input.descriptionEn.slice(0, 140) || `${pct}% discount`,
+        descriptionSw: input.descriptionSw.slice(0, 140) || `Punguzo la ${pct}%`,
+      };
+      if (isCloudAdmin) {
+        setDoc(doc(db, 'coupons', cleanCode), {
+          ...couponObj,
+          updatedAt: serverTimestamp(),
+        }).catch((err) => handleFirestoreError(err, OperationType.WRITE, `coupons/${cleanCode}`));
+      } else {
+        setLocalCoupons((prev) => {
+          const exists = prev.some((c) => c.code === cleanCode);
+          return exists
+            ? prev.map((c) => (c.code === cleanCode ? couponObj : c))
+            : [couponObj, ...prev];
+        });
+      }
+      showToast(t.admin.products.updatedToast);
+    },
+    [isCloudAdmin, showToast, t.admin.products.updatedToast]
+  );
+
+  const toggleCouponActive = useCallback(
+    (code: string) => {
+      const target = coupons.find((c) => c.code === code);
+      if (!target) return;
+      if (isCloudAdmin && cloudCoupons) {
+        updateDoc(doc(db, 'coupons', code), {
+          active: !target.active,
+          updatedAt: serverTimestamp(),
+        }).catch((err) => handleFirestoreError(err, OperationType.UPDATE, `coupons/${code}`));
+      } else {
+        setLocalCoupons((prev) =>
+          prev.map((c) => (c.code === code ? { ...c, active: !c.active } : c))
+        );
+      }
+      showToast(t.admin.products.updatedToast);
+    },
+    [coupons, isCloudAdmin, cloudCoupons, showToast, t.admin.products.updatedToast]
+  );
+
+  const cartSummary = useMemo(() => {
+    let itemCount = 0;
+    let subtotalTzs = 0;
+    let savingsTzs = 0;
+    let hasOutOfStockItem = false;
+    const snapshots: OrderItemSnapshot[] = [];
+
+    cart.forEach((item) => {
+      const product = products.find((p) => p.id === item.productId);
+      if (!product) return;
+      itemCount += item.quantity;
+      if (!product.inStock) {
+        hasOutOfStockItem = true;
+      }
+      const pricing = calculateLinePricing(
+        product.basePrice250g,
+        item.size,
+        item.quantity,
+        product.wholesaleDiscount
+      );
+      subtotalTzs += pricing.lineFinalTzs;
+      savingsTzs += pricing.savingsTzs;
+      snapshots.push({
+        productId: product.id,
+        nameEn: product.nameEn,
+        nameSw: product.nameSw,
+        size: item.size,
+        quantity: item.quantity,
+        unitPriceTzs: pricing.unitFinalTzs,
+        lineTotalTzs: pricing.lineFinalTzs,
+        isWholesale: pricing.isWholesaleApplied,
+      });
+    });
+
+    const promoDiscountTzs = appliedCoupon
+      ? Math.round((subtotalTzs * appliedCoupon.discountPercent) / 100 / 100) * 100
+      : 0;
+    const subtotalAfterPromoTzs = Math.max(0, subtotalTzs - promoDiscountTzs);
+
+    return {
+      itemCount,
+      subtotalTzs,
+      savingsTzs,
+      promoDiscountTzs,
+      subtotalAfterPromoTzs,
+      hasOutOfStockItem,
+      snapshots,
+    };
+  }, [cart, products, appliedCoupon]);
+
+  const placeOrder = useCallback(
+    async (input: PlaceOrderInput): Promise<Order> => {
+      const nowIso = new Date().toISOString();
+      const snapshots = cartSummary.snapshots;
+      const subtotalTzs = cartSummary.subtotalTzs;
+      const savingsTzs = cartSummary.savingsTzs;
+      const promoDiscountTzs = cartSummary.promoDiscountTzs;
+      const promoCode = appliedCoupon?.code;
+      const vacuumFeeTzs = input.vacuumPacked ? input.vacuumFeeTzs : 0;
+      const deliveryFeeValue = input.deliveryFeeTzs ?? 0;
+      const totalTzs = Math.max(0, subtotalTzs - promoDiscountTzs + vacuumFeeTzs + deliveryFeeValue);
+
+      let orderType: OrderType = 'retail';
+      if (input.deliveryMethod === 'international_dhl') {
+        orderType = 'export';
+      } else if (snapshots.some((s) => s.isWholesale || s.size === '5kg' || s.quantity >= 5)) {
+        orderType = 'wholesale';
+      }
+
+      const orderNum = 1049 + orders.length + Math.floor(Math.random() * 90);
+      const orderCode = `SHK-${orderNum}`;
+      const orderDocId = `ord-${Date.now()}`;
+      const itemsSummary = snapshots
+        .map((s) => `${s.nameEn} (${s.size}) x${s.quantity}`)
+        .join(', ')
+        .slice(0, 600);
+
+      const newOrder: Order = {
+        id: orderCode,
+        userId: user?.uid,
+        customerName: (input.customerName.trim() || 'Guest Customer').slice(0, 120),
+        customerPhone: (input.customerPhone.trim() || '-').slice(0, 40),
+        type: orderType,
+        deliveryMethod: input.deliveryMethod,
+        location: input.location.slice(0, 160),
+        paymentMethod: input.paymentMethod,
+        vacuumPacked: input.vacuumPacked,
+        vacuumFeeTzs,
+        deliveryFeeTzs: input.deliveryFeeTzs,
+        subtotalTzs,
+        savingsTzs,
+        promoCode,
+        promoDiscountTzs,
+        totalTzs,
+        currency,
+        totalInOrderCurrency: convertTzsToCurrency(totalTzs, currency),
+        status: 'pending',
+        createdAt: nowIso,
+        statusHistory: [{ status: 'pending', at: nowIso }],
+        items: snapshots,
+        itemCount: snapshots.length,
+        itemsSummary,
+        isCloudSynced: Boolean(user && user.emailVerified),
+        notes: input.notes?.trim() ? input.notes.trim().slice(0, 400) : undefined,
+      };
+
+      // If verified signed-in user, commit atomically to Firestore via Master Gate writeBatch
+      if (user && user.emailVerified && snapshots.length > 0) {
+        const orderPath = `orders/${orderDocId}`;
+        try {
+          const batch = writeBatch(db);
+          const orderRef = doc(db, 'orders', orderDocId);
+          const orderPayload: Record<string, unknown> = {
+            orderCode,
+            userId: user.uid,
+            customerName: newOrder.customerName,
+            customerPhone: newOrder.customerPhone,
+            type: newOrder.type,
+            deliveryMethod: newOrder.deliveryMethod,
+            location: newOrder.location,
+            paymentMethod: newOrder.paymentMethod,
+            vacuumPacked: newOrder.vacuumPacked,
+            vacuumFeeTzs: newOrder.vacuumFeeTzs,
+            deliveryFeeTzs: input.deliveryFeeTzs ?? -1,
+            subtotalTzs: newOrder.subtotalTzs,
+            savingsTzs: newOrder.savingsTzs,
+            totalTzs: newOrder.totalTzs,
+            currency: newOrder.currency,
+            totalInOrderCurrency: newOrder.totalInOrderCurrency,
+            status: 'pending',
+            itemCount: snapshots.length,
+            itemsSummary,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+          if (promoCode) {
+            orderPayload.promoCode = promoCode;
+            orderPayload.promoDiscountTzs = promoDiscountTzs;
+          }
+          if (newOrder.notes) {
+            orderPayload.notes = newOrder.notes;
+          }
+          batch.set(orderRef, orderPayload);
+
+          snapshots.forEach((snapItem, idx) => {
+            const itemRef = doc(db, 'orders', orderDocId, 'items', `item-${idx}`);
+            batch.set(itemRef, {
+              userId: user.uid,
+              productId: snapItem.productId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128),
+              nameEn: snapItem.nameEn.slice(0, 120),
+              nameSw: snapItem.nameSw.slice(0, 120),
+              size: snapItem.size,
+              quantity: snapItem.quantity,
+              unitPriceTzs: snapItem.unitPriceTzs,
+              lineTotalTzs: snapItem.lineTotalTzs,
+              isWholesale: snapItem.isWholesale,
+            });
+          });
+
+          await batch.commit();
+          newOrder.id = orderDocId;
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, orderPath);
+        }
+      } else {
+        setLocalOrders((prev) => [newOrder, ...prev]);
+      }
+
+      setCart([]);
+      setVacuumPackedState(false);
+      setAppliedCouponCode(null);
+      return newOrder;
+    },
+    [cartSummary, appliedCoupon, currency, orders.length, user]
+  );
+
+  const updateProduct = useCallback(
+    (productId: string, updates: Partial<Product>) => {
+      if (isCloudAdmin && cloudProducts) {
+        const path = `products/${productId}`;
+        const allowedUpdates: Record<string, unknown> = { updatedAt: serverTimestamp() };
+        if (typeof updates.basePrice250g === 'number') {
+          allowedUpdates.basePrice250g = Math.max(100, Math.round(updates.basePrice250g));
+        }
+        if (typeof updates.wholesaleDiscount === 'number') {
+          allowedUpdates.wholesaleDiscount = Math.max(0, Math.min(40, Math.round(updates.wholesaleDiscount)));
+        }
+        if (typeof updates.inStock === 'boolean') {
+          allowedUpdates.inStock = updates.inStock;
+        }
+        if (typeof updates.nameEn === 'string') {
+          allowedUpdates.nameEn = updates.nameEn.slice(0, 120);
+        }
+        if (typeof updates.nameSw === 'string') {
+          allowedUpdates.nameSw = updates.nameSw.slice(0, 120);
+        }
+        updateDoc(doc(db, 'products', productId), allowedUpdates).catch((error) => {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        });
+      } else {
+        setLocalProducts((prev) =>
+          prev.map((p) => (p.id === productId ? { ...p, ...updates } : p))
+        );
+      }
+      showToast(t.admin.products.updatedToast);
+    },
+    [isCloudAdmin, cloudProducts, showToast, t.admin.products.updatedToast]
+  );
+
+  const addProduct = useCallback(
+    (productInput: Omit<Product, 'id' | 'rating' | 'reviewCount' | 'badge'>): Product => {
+      const id = `prod-${Date.now()}`;
+      const created: Product = {
+        ...productInput,
+        id,
+        rating: 5.0,
+        reviewCount: 1,
+        badge: 'new',
+      };
+
+      if (isCloudAdmin) {
+        const path = `products/${id}`;
+        const payload: Record<string, unknown> = {
+          nameEn: created.nameEn.slice(0, 120),
+          nameSw: (created.nameSw || created.nameEn).slice(0, 120),
+          descriptionEn: created.descriptionEn.slice(0, 600),
+          descriptionSw: created.descriptionSw.slice(0, 600),
+          category: created.category,
+          basePrice250g: Math.max(100, Math.round(created.basePrice250g)),
+          wholesaleDiscount: Math.max(0, Math.min(40, Math.round(created.wholesaleDiscount))),
+          inStock: created.inStock,
+          rating: created.rating,
+          reviewCount: created.reviewCount,
+          badge: 'new',
+          emoji: created.emoji.slice(0, 16),
+          gradientFrom: created.gradientFrom,
+          gradientTo: created.gradientTo,
+          originEn: created.originEn.slice(0, 80),
+          originSw: created.originSw.slice(0, 80),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        if (created.image && created.image.length <= 500000) {
+          payload.image = created.image;
+        }
+        setDoc(doc(db, 'products', id), payload).catch((error) => {
+          handleFirestoreError(error, OperationType.CREATE, path);
+        });
+      } else {
+        setLocalProducts((prev) => [created, ...prev]);
+      }
+
+      showToast(t.admin.addModal.createdToast);
+      return created;
+    },
+    [isCloudAdmin, showToast, t.admin.addModal.createdToast]
+  );
+
+  const updateOrderStatus = useCallback(
+    (orderId: string, nextStatus: OrderStatus) => {
+      const target = orders.find((o) => o.id === orderId);
+      if (!target || target.status === nextStatus) return;
+
+      if (target.isCloudSynced && isCloudAdmin) {
+        const path = `orders/${orderId}`;
+        const updates: Record<string, unknown> = {
+          status: nextStatus,
+          updatedAt: serverTimestamp(),
+        };
+        if (nextStatus === 'packed') updates.packedAt = serverTimestamp();
+        if (nextStatus === 'dispatched') updates.dispatchedAt = serverTimestamp();
+        updateDoc(doc(db, 'orders', orderId), updates).catch((error) => {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        });
+      } else {
+        const nowIso = new Date().toISOString();
+        setLocalOrders((prev) =>
+          prev.map((order) => {
+            if (order.id !== orderId) return order;
+            const alreadyLogged = order.statusHistory.some((h) => h.status === nextStatus);
+            const nextHistory = alreadyLogged
+              ? order.statusHistory.map((h) =>
+                  h.status === nextStatus ? { ...h, at: nowIso } : h
+                )
+              : [...order.statusHistory, { status: nextStatus, at: nowIso }];
+            return {
+              ...order,
+              status: nextStatus,
+              statusHistory: nextHistory,
+            };
+          })
+        );
+      }
+      showToast(t.admin.products.updatedToast);
+    },
+    [orders, isCloudAdmin, showToast, t.admin.products.updatedToast]
+  );
+
+  const resetDemoData = useCallback(() => {
+    setLocalProducts(SEED_PRODUCTS);
+    setLocalOrders(SEED_ORDERS);
+    setCart([]);
+    setVacuumPackedState(false);
+    safeWriteStorage(STORAGE_KEYS.products, SEED_PRODUCTS);
+    safeWriteStorage(STORAGE_KEYS.orders, SEED_ORDERS);
+    safeWriteStorage(STORAGE_KEYS.cart, []);
+    showToast(t.admin.resetDone);
+  }, [showToast, t.admin.resetDone]);
+
+  const value: StoreContextValue = {
+    products,
+    orders,
+    coupons,
+    cart,
+    language,
+    currency,
+    vacuumPacked,
+    appliedCoupon,
+    adminMode,
+    adminUnlocked,
+    previewMode,
+    toastMessage,
+    user,
+    authReady,
+    isCloudAdmin,
+    cloudCatalogSynced: cloudProducts !== null,
+    t,
+    setLanguage,
+    setCurrency,
+    setVacuumPacked,
+    setAdminMode,
+    unlockAdmin,
+    setPreviewMode,
+    showToast,
+    signInWithGoogle,
+    signOutUser,
+    seedCatalogToCloud,
+    loadOrderItems,
+    applyPromoCode,
+    removePromoCode,
+    addBundleToCart,
+    upsertCoupon,
+    toggleCouponActive,
+    addToCart,
+    updateCartItemQuantity,
+    removeFromCart,
+    clearCart,
+    placeOrder,
+    updateProduct,
+    addProduct,
+    updateOrderStatus,
+    resetDemoData,
+    cartSummary,
+  };
+
+  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+};
+
+export function useStore(): StoreContextValue {
+  const ctx = useContext(StoreContext);
+  if (!ctx) {
+    throw new Error('useStore must be used within a StoreProvider');
+  }
+  return ctx;
+}

@@ -1,0 +1,423 @@
+{
+  "entities": {
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized store administrator record keyed by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200,
+          "description": "Verified administrator email address."
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Administrator display name."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when admin record was created."
+        }
+      },
+      "required": ["email", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Retail and wholesale product listed in Shakazulu Store.",
+      "type": "object",
+      "properties": {
+        "nameEn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Product name in English."
+        },
+        "nameSw": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Product name in Swahili."
+        },
+        "descriptionEn": {
+          "type": "string",
+          "maxLength": 600,
+          "description": "English product description."
+        },
+        "descriptionSw": {
+          "type": "string",
+          "maxLength": 600,
+          "description": "Swahili product description."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["ubuyu_achari", "nuts_seeds", "spices_masalas", "dried_fruits_oils"],
+          "description": "Catalog category identifier."
+        },
+        "basePrice250g": {
+          "type": "number",
+          "description": "Retail base price in TZS for a 250g pack."
+        },
+        "wholesaleDiscount": {
+          "type": "number",
+          "description": "Wholesale discount percentage (0 to 40)."
+        },
+        "inStock": {
+          "type": "boolean",
+          "description": "Whether the product is currently available."
+        },
+        "rating": {
+          "type": "number",
+          "description": "Average customer rating (0 to 5)."
+        },
+        "reviewCount": {
+          "type": "number",
+          "description": "Total number of customer reviews."
+        },
+        "badge": {
+          "type": "string",
+          "enum": ["best_seller", "new", "none"],
+          "description": "Optional highlight badge."
+        },
+        "emoji": {
+          "type": "string",
+          "maxLength": 16,
+          "description": "Fallback emoji icon."
+        },
+        "gradientFrom": {
+          "type": "string",
+          "maxLength": 24,
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "description": "Start hex color for stylized tile."
+        },
+        "gradientTo": {
+          "type": "string",
+          "maxLength": 24,
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "description": "End hex color for stylized tile."
+        },
+        "originEn": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Product origin label in English."
+        },
+        "originSw": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Product origin label in Swahili."
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 500000,
+          "description": "Optional image URL or data URI."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "nameEn",
+        "nameSw",
+        "descriptionEn",
+        "descriptionSw",
+        "category",
+        "basePrice250g",
+        "wholesaleDiscount",
+        "inStock",
+        "rating",
+        "reviewCount",
+        "badge",
+        "emoji",
+        "gradientFrom",
+        "gradientTo",
+        "originEn",
+        "originSw",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer retail, wholesale, or export order.",
+      "type": "object",
+      "properties": {
+        "orderCode": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9\\-]+$",
+          "description": "Human-readable order code (e.g. SHK-1049)."
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the customer who placed the order."
+        },
+        "customerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Customer full name."
+        },
+        "customerPhone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Customer phone or WhatsApp number."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["retail", "wholesale", "export"],
+          "description": "Order classification."
+        },
+        "deliveryMethod": {
+          "type": "string",
+          "enum": ["dar_delivery", "upcountry_bus", "international_dhl", "store_pickup"],
+          "description": "Selected delivery channel."
+        },
+        "location": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Delivery destination or pickup point."
+        },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["mpesa", "mixx_yas", "airtel_money", "card", "whatsapp"],
+          "description": "Payment method."
+        },
+        "vacuumPacked": {
+          "type": "boolean",
+          "description": "Whether airtight vacuum packing was requested."
+        },
+        "vacuumFeeTzs": {
+          "type": "number",
+          "description": "Vacuum packing fee in TZS."
+        },
+        "deliveryFeeTzs": {
+          "type": "number",
+          "description": "Delivery fee in TZS, or -1 when quoted on WhatsApp."
+        },
+        "subtotalTzs": {
+          "type": "number",
+          "description": "Order items subtotal in TZS."
+        },
+        "savingsTzs": {
+          "type": "number",
+          "description": "Wholesale savings in TZS."
+        },
+        "totalTzs": {
+          "type": "number",
+          "description": "Grand total in TZS."
+        },
+        "currency": {
+          "type": "string",
+          "enum": ["TZS", "USD"],
+          "description": "Active display currency at order time."
+        },
+        "totalInOrderCurrency": {
+          "type": "number",
+          "description": "Grand total in the order's active currency."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "packed", "dispatched"],
+          "description": "Current fulfillment status."
+        },
+        "itemCount": {
+          "type": "number",
+          "description": "Total number of distinct line items in the order."
+        },
+        "itemsSummary": {
+          "type": "string",
+          "maxLength": 600,
+          "description": "Compact summary string of ordered items."
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Optional customer delivery notes."
+        },
+        "promoCode": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9_\\-]+$",
+          "description": "Applied promo code if any."
+        },
+        "promoDiscountTzs": {
+          "type": "number",
+          "description": "Promo code discount amount in TZS."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of order creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last status update."
+        }
+      },
+      "required": [
+        "orderCode",
+        "userId",
+        "customerName",
+        "customerPhone",
+        "type",
+        "deliveryMethod",
+        "location",
+        "paymentMethod",
+        "vacuumPacked",
+        "vacuumFeeTzs",
+        "deliveryFeeTzs",
+        "subtotalTzs",
+        "savingsTzs",
+        "totalTzs",
+        "currency",
+        "totalInOrderCurrency",
+        "status",
+        "itemCount",
+        "itemsSummary",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "OrderItem": {
+      "title": "OrderItem",
+      "description": "Line item snapshot stored under an order subcollection.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner Firebase Auth UID."
+        },
+        "productId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Product ID."
+        },
+        "nameEn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "English name snapshot."
+        },
+        "nameSw": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Swahili name snapshot."
+        },
+        "size": {
+          "type": "string",
+          "enum": ["250g", "500g", "1kg", "5kg"],
+          "description": "Selected weight option."
+        },
+        "quantity": {
+          "type": "number",
+          "description": "Quantity ordered."
+        },
+        "unitPriceTzs": {
+          "type": "number",
+          "description": "Unit price in TZS."
+        },
+        "lineTotalTzs": {
+          "type": "number",
+          "description": "Line total in TZS."
+        },
+        "isWholesale": {
+          "type": "boolean",
+          "description": "Whether wholesale pricing applied."
+        }
+      },
+      "required": [
+        "userId",
+        "productId",
+        "nameEn",
+        "nameSw",
+        "size",
+        "quantity",
+        "unitPriceTzs",
+        "lineTotalTzs",
+        "isWholesale"
+      ]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Promotional discount code managed by store admins.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 24,
+          "pattern": "^[A-Z0-9_\\-]+$",
+          "description": "Uppercase promo code."
+        },
+        "discountPercent": {
+          "type": "number",
+          "description": "Percentage discount (1 to 40)."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the coupon is active."
+        },
+        "descriptionEn": {
+          "type": "string",
+          "maxLength": 140,
+          "description": "English coupon label."
+        },
+        "descriptionSw": {
+          "type": "string",
+          "maxLength": 140,
+          "description": "Swahili coupon label."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp."
+        }
+      },
+      "required": ["code", "discountPercent", "active", "descriptionEn", "descriptionSw", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Authorized store administrators."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Publicly readable store product catalog, writable only by admins."
+    },
+    "/coupons/{couponId}": {
+      "schema": { "$ref": "#/entities/Coupon" },
+      "description": "Promotional discount codes readable at checkout, writable only by admins."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Customer orders isolated per userId and accessible to store admins."
+    },
+    "/orders/{orderId}/items/{itemId}": {
+      "schema": { "$ref": "#/entities/OrderItem" },
+      "description": "Line items subcollection for each order, synchronized via Master Gate."
+    }
+  }
+}
