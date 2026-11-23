@@ -20,6 +20,7 @@ import {
   RotateCcw,
   Search,
   ShoppingBag,
+  Smartphone,
   Tag,
   Trash2,
   TrendingUp,
@@ -38,6 +39,7 @@ import {
 import { downloadCsv } from '../../utils/tracking';
 import { ProductArtwork } from '../common/ProductArtwork';
 import { AddProductModal } from './AddProductModal';
+import { AdminSplashManager } from './AdminSplashManager';
 
 interface AdminViewProps {
   isMobileLayout: boolean;
@@ -458,6 +460,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
     { id: 'dashboard', label: t.admin.tabs.dashboard, icon: BarChart3 },
     { id: 'products', label: t.admin.tabs.products, icon: Box },
     { id: 'orders', label: t.admin.tabs.orders, icon: ShoppingBag },
+    { id: 'splash', label: t.admin.tabs.splash, icon: Smartphone },
   ];
 
   // Dashboard Content
@@ -1678,6 +1681,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
           {activeTab === 'dashboard' && renderDashboard()}
           {activeTab === 'products' && renderProductsManager()}
           {activeTab === 'orders' && renderOrdersTracker()}
+          {activeTab === 'splash' && (
+            <AdminSplashManager isMobileLayout isScopedFrame={isScopedFrame} />
+          )}
         </main>
 
         {/* Mobile Admin Bottom Tabs */}
@@ -1685,7 +1691,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
           aria-label="Admin Navigation"
           className={`no-print ${
             isScopedFrame ? 'absolute' : 'fixed'
-          } bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#2B1B17]/10 grid grid-cols-3 items-center h-[60px] pb-safe`}
+          } bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#2B1B17]/10 grid grid-cols-4 items-center h-[60px] pb-safe`}
         >
           {adminTabs.map((tab) => {
             const Icon = tab.icon;
@@ -1765,6 +1771,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
           {activeTab === 'dashboard' && renderDashboard()}
           {activeTab === 'products' && renderProductsManager()}
           {activeTab === 'orders' && renderOrdersTracker()}
+          {activeTab === 'splash' && <AdminSplashManager isMobileLayout={false} />}
         </main>
       </div>
 

@@ -169,6 +169,26 @@ export interface TrackedOrderResult {
   isLocal?: boolean;
 }
 
+export interface SplashSlide {
+  id: string;
+  kickerEn: string;
+  kickerSw: string;
+  titleEn: string;
+  titleSw: string;
+  bodyEn: string;
+  bodySw: string;
+  badgeEn: string;
+  badgeSw: string;
+  image?: string;
+  gradientFrom: string;
+  gradientTo: string;
+}
+
+export interface SplashConfig {
+  enabled: boolean;
+  slides: SplashSlide[];
+}
+
 export type MobileTab = 'home' | 'categories' | 'wholesale' | 'cart' | 'more';
-export type AdminTab = 'dashboard' | 'products' | 'orders';
+export type AdminTab = 'dashboard' | 'products' | 'orders' | 'splash';
 export type PreviewMode = 'web' | 'app';

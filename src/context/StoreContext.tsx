@@ -16,7 +16,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { SEED_CATEGORIES, SEED_COUPONS, SEED_ORDERS, SEED_PRODUCTS } from '../data/seedData';
+import { DEFAULT_SPLASH_CONFIG, SEED_CATEGORIES, SEED_COUPONS, SEED_ORDERS, SEED_PRODUCTS } from '../data/seedData';
 import {
   ADMIN_EMAIL,
   auth,
@@ -44,6 +44,8 @@ import {
   Product,
   ProductBadge,
   SizeOption,
+  SplashConfig,
+  SplashSlide,
   TrackedOrderResult,
 } from '../types';
 import { calculateLinePricing, convertTzsToCurrency } from '../utils/pricing';
@@ -59,7 +61,39 @@ const STORAGE_KEYS = {
   vacuumPacked: 'shakazulu_vacuum_v1',
   coupons: 'shakazulu_coupons_v1',
   categories: 'shakazulu_categories_v1',
+  splash: 'shakazulu_splash_config_v1',
 };
+
+function sanitizeHexColor(raw: unknown, fallback: string): string {
+  return typeof raw === 'string' && /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : fallback;
+}
+
+function sanitizeSplashSlide(raw: SplashSlide, index: number): SplashSlide {
+  const cleanId =
+    (raw.id || `splash-${index + 1}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) ||
+    `splash-${index + 1}`;
+  const cleanTitleEn = (raw.titleEn || raw.titleSw || 'Shakazulu Store').trim().slice(0, 160);
+  const cleanTitleSw = (raw.titleSw || raw.titleEn || 'Shakazulu Store').trim().slice(0, 160);
+  const cleanImage =
+    typeof raw.image === 'string' && raw.image.trim().length > 0 && raw.image.trim().length <= 160000
+      ? raw.image.trim()
+      : undefined;
+
+  return {
+    id: cleanId,
+    kickerEn: (raw.kickerEn || '').trim().slice(0, 120),
+    kickerSw: (raw.kickerSw || '').trim().slice(0, 120),
+    titleEn: cleanTitleEn,
+    titleSw: cleanTitleSw,
+    bodyEn: (raw.bodyEn || '').trim().slice(0, 400),
+    bodySw: (raw.bodySw || '').trim().slice(0, 400),
+    badgeEn: (raw.badgeEn || '').trim().slice(0, 100),
+    badgeSw: (raw.badgeSw || '').trim().slice(0, 100),
+    gradientFrom: sanitizeHexColor(raw.gradientFrom, '#D95D39'),
+    gradientTo: sanitizeHexColor(raw.gradientTo, '#2B1B17'),
+    ...(cleanImage ? { image: cleanImage } : {}),
+  };
+}
 
 function safeReadStorage<T>(key: string, fallback: T): T {
   try {
@@ -151,6 +185,9 @@ interface StoreContextValue {
   updateCategory: (categoryId: string, updates: { nameEn: string; nameSw: string }) => void;
   deleteCategory: (categoryId: string) => boolean;
   updateOrderStatus: (orderId: string, nextStatus: OrderStatus) => void;
+  splashConfig: SplashConfig;
+  updateSplashConfig: (config: SplashConfig) => void;
+  resetSplashConfig: () => void;
   resetDemoData: () => void;
   cartSummary: {
     itemCount: number;
@@ -185,6 +222,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     safeReadStorage<Coupon[]>(STORAGE_KEYS.coupons, SEED_COUPONS)
   );
   const [cloudCoupons, setCloudCoupons] = useState<Coupon[] | null>(null);
+  const [localSplashConfig, setLocalSplashConfig] = useState<SplashConfig>(() =>
+    safeReadStorage<SplashConfig>(STORAGE_KEYS.splash, DEFAULT_SPLASH_CONFIG)
+  );
+  const [cloudSplashConfig, setCloudSplashConfig] = useState<SplashConfig | null>(null);
   const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
 
   const [cart, setCart] = useState<CartItem[]>(() =>
@@ -334,6 +375,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => unsub();
   }, []);
 
+  // Real-time Splash Screen configuration listener (/storeSettings/splash)
+  useEffect(() => {
+    const splashRef = doc(db, 'storeSettings', 'splash');
+    const unsub = onSnapshot(
+      splashRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setCloudSplashConfig(null);
+          return;
+        }
+        const data = snap.data();
+        const rawSlides = Array.isArray(data.slides) ? (data.slides as SplashSlide[]) : [];
+        setCloudSplashConfig({
+          enabled: typeof data.enabled === 'boolean' ? data.enabled : true,
+          slides: rawSlides.slice(0, 6).map((s, idx) => sanitizeSplashSlide(s, idx)),
+        });
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'storeSettings/splash');
+      }
+    );
+    return () => unsub();
+  }, []);
+
   // Real-time Orders listener (ONLY attached when auth is ready and user is authenticated)
   useEffect(() => {
     if (!authReady || !user || !user.emailVerified) {
@@ -463,6 +528,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     safeWriteStorage(STORAGE_KEYS.coupons, localCoupons);
   }, [localCoupons]);
+
+  useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.splash, localSplashConfig);
+  }, [localSplashConfig]);
+
+  const splashConfig = cloudSplashConfig ?? localSplashConfig;
 
   useEffect(() => {
     safeWriteStorage(STORAGE_KEYS.cart, cart);
@@ -1347,15 +1418,62 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [orders, isCloudAdmin, showToast, t.admin.products.updatedToast]
   );
 
+  const updateSplashConfig = useCallback(
+    (nextConfig: SplashConfig) => {
+      const sanitized: SplashConfig = {
+        enabled: Boolean(nextConfig.enabled),
+        slides: nextConfig.slides.slice(0, 6).map((s, idx) => sanitizeSplashSlide(s, idx)),
+      };
+
+      if (isCloudAdmin) {
+        const firestoreSlides = sanitized.slides.map((s) => {
+          const obj: Record<string, unknown> = {
+            id: s.id,
+            kickerEn: s.kickerEn,
+            kickerSw: s.kickerSw,
+            titleEn: s.titleEn,
+            titleSw: s.titleSw,
+            bodyEn: s.bodyEn,
+            bodySw: s.bodySw,
+            badgeEn: s.badgeEn,
+            badgeSw: s.badgeSw,
+            gradientFrom: s.gradientFrom,
+            gradientTo: s.gradientTo,
+          };
+          if (s.image) obj.image = s.image;
+          return obj;
+        });
+
+        setDoc(doc(db, 'storeSettings', 'splash'), {
+          enabled: sanitized.enabled,
+          slides: firestoreSlides,
+          updatedAt: serverTimestamp(),
+        }).catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, 'storeSettings/splash')
+        );
+      } else {
+        setLocalSplashConfig(sanitized);
+      }
+      showToast(t.admin.splash.savedToast);
+    },
+    [isCloudAdmin, showToast, t.admin.splash.savedToast]
+  );
+
+  const resetSplashConfig = useCallback(() => {
+    updateSplashConfig(DEFAULT_SPLASH_CONFIG);
+  }, [updateSplashConfig]);
+
   const resetDemoData = useCallback(() => {
     setLocalProducts(SEED_PRODUCTS);
     setLocalCategories(SEED_CATEGORIES);
     setLocalOrders(SEED_ORDERS);
+    setLocalSplashConfig(DEFAULT_SPLASH_CONFIG);
     setCart([]);
     setVacuumPackedState(false);
     safeWriteStorage(STORAGE_KEYS.products, SEED_PRODUCTS);
     safeWriteStorage(STORAGE_KEYS.categories, SEED_CATEGORIES);
     safeWriteStorage(STORAGE_KEYS.orders, SEED_ORDERS);
+    safeWriteStorage(STORAGE_KEYS.splash, DEFAULT_SPLASH_CONFIG);
     safeWriteStorage(STORAGE_KEYS.cart, []);
     showToast(t.admin.resetDone);
   }, [showToast, t.admin.resetDone]);
@@ -1412,6 +1530,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     updateCategory,
     deleteCategory,
     updateOrderStatus,
+    splashConfig,
+    updateSplashConfig,
+    resetSplashConfig,
     resetDemoData,
     cartSummary,
   };

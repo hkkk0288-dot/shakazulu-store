@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronRight,
   ClipboardList,
+  Clock,
+  Coins,
   Gift,
+  Globe,
   Grid,
   Heart,
   Home,
@@ -70,6 +73,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
     setCurrency,
     setAdminMode,
     addBundleToCart,
+    splashConfig,
     t,
   } = useStore();
 
@@ -81,8 +85,10 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [savedOnly, setSavedOnly] = useState(false);
   const [ordersModalOpen, setOrdersModalOpen] = useState(false);
+  const hasActiveSplash = splashConfig.enabled && splashConfig.slides.length > 0;
+
   const [showSplash, setShowSplash] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === 'undefined' || !hasActiveSplash) return false;
     try {
       const hasDeepLink = new URLSearchParams(window.location.search).has('product');
       if (hasDeepLink) return false;
@@ -93,6 +99,12 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
   });
   const [promoIndex, setPromoIndex] = useState(0);
   const [isFilteringSkeleton, setIsFilteringSkeleton] = useState(false);
+
+  useEffect(() => {
+    if (!hasActiveSplash && showSplash) {
+      setShowSplash(false);
+    }
+  }, [hasActiveSplash, showSplash]);
 
   const handleFinishSplash = () => {
     try {
@@ -746,190 +758,261 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
           </div>
         )}
 
-        {/* MORE TAB */}
+        {/* MORE TAB — Native Grouped Mobile Settings & Store Hub */}
         {activeTab === 'more' && (
-          <div className="space-y-4">
-            <h1 className="font-display text-lg font-bold text-[#2B1B17]">
-              {t.moreTab.title}
-            </h1>
-
-            {/* Language & Currency Preferences */}
-            <div className="bg-white rounded-2xl p-4 border border-[#2B1B17]/10 space-y-4">
-              <h2 className="font-display font-bold text-sm text-[#2B1B17]">
-                {t.moreTab.preferences}
-              </h2>
-
+          <div className="space-y-5 pb-4">
+            {/* Boutique Identity & Quick Actions Hero Card */}
+            <div className="bg-[#2B1B17] text-[#FAF7F2] rounded-3xl p-4 shadow-sm space-y-3.5">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-semibold text-[#2B1B17]/80">
-                  {t.moreTab.language}
-                </span>
-                <div className="inline-flex bg-[#FAF7F2] rounded-xl p-1 border border-[#2B1B17]/10">
-                  {(['en', 'sw'] as const).map((lang) => (
-                    <button
-                      key={lang}
-                      type="button"
-                      onClick={() => setLanguage(lang)}
-                      className={`min-h-[36px] px-3.5 rounded-lg text-xs font-bold uppercase transition-colors ${
-                        language === lang ? 'bg-[#2B1B17] text-white' : 'text-[#2B1B17]/70'
-                      }`}
-                    >
-                      {lang === 'en' ? 'English' : 'Kiswahili'}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-2xl bg-[#D95D39] text-white font-display font-extrabold text-base flex items-center justify-center shrink-0">
+                    {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'S'}
+                  </div>
+                  <div className="min-w-0">
+                    <h1 className="font-display font-bold text-sm text-white truncate">
+                      {user?.displayName || t.brandName}
+                    </h1>
+                    <p className="text-[11px] text-[#FAF7F2]/70 truncate">
+                      {user?.email || t.moreTab.guestSubtitle}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-semibold text-[#2B1B17]/80">
-                  {t.moreTab.currency}
-                </span>
-                <div className="inline-flex bg-[#FAF7F2] rounded-xl p-1 border border-[#2B1B17]/10">
-                  {(['TZS', 'USD'] as const).map((curr) => (
-                    <button
-                      key={curr}
-                      type="button"
-                      onClick={() => setCurrency(curr)}
-                      className={`min-h-[36px] px-3.5 rounded-lg text-xs font-bold transition-colors ${
-                        currency === curr ? 'bg-[#2B1B17] text-white' : 'text-[#2B1B17]/70'
-                      }`}
-                    >
-                      {curr}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowSplash(true)}
-                className="w-full min-h-[42px] px-3.5 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/10 text-[#2B1B17] text-xs font-semibold inline-flex items-center justify-center gap-2 active:scale-95 transition-transform"
-              >
-                <Smartphone className="w-4 h-4 text-[#D95D39]" />
-                <span>{t.splash.replayBtn}</span>
-              </button>
-            </div>
-
-            {/* Installable PWA Card (shown when installable or on iOS Safari) */}
-            {!isInstalled && (isInstallable || isIOS) && (
-              <div className="bg-white rounded-2xl p-4 border border-[#2B1B17]/10 space-y-2.5">
-                <div className="flex items-center gap-2 text-[#D95D39]">
-                  <Smartphone className="w-4 h-4" />
-                  <h2 className="font-display font-bold text-sm text-[#2B1B17]">
-                    {t.pwa.cardTitle}
-                  </h2>
-                </div>
-                <p className="text-xs text-[#2B1B17]/70 leading-relaxed">{t.pwa.cardSubtitle}</p>
-                <PWAInstallButton variant="card" />
-              </div>
-            )}
-
-            {/* Track & My Orders + Cloud Account */}
-            <div className="bg-white rounded-2xl p-4 border border-[#2B1B17]/10 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="font-display font-bold text-sm text-[#2B1B17]">
-                  {t.cloudAuth.myOrders}
-                </h2>
                 {user ? (
                   <button
                     type="button"
                     onClick={() => void signOutUser()}
-                    className="min-h-[36px] px-3 rounded-xl bg-[#FAF7F2] text-xs font-semibold text-[#2B1B17] inline-flex items-center gap-1.5"
+                    className="min-h-[38px] px-3 rounded-xl bg-white/12 hover:bg-white/20 text-white text-[11px] font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-95 transition-transform"
                   >
-                    <LogOut className="w-3.5 h-3.5" />
+                    <LogOut className="w-3.5 h-3.5 text-[#F4A261]" />
                     <span>{t.cloudAuth.signOut}</span>
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={() => void signInWithGoogle()}
-                    className="min-h-[36px] px-3 rounded-xl bg-[#2B1B17] text-white text-xs font-semibold inline-flex items-center gap-1.5"
+                    className="min-h-[38px] px-3 rounded-xl bg-[#F4A261] hover:bg-[#e8944f] text-[#2B1B17] text-[11px] font-bold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-95 transition-transform"
                   >
-                    <LogIn className="w-3.5 h-3.5 text-[#F4A261]" />
+                    <LogIn className="w-3.5 h-3.5" />
                     <span>{t.cloudAuth.signInGoogle}</span>
                   </button>
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => setOrdersModalOpen(true)}
-                className="w-full min-h-[44px] px-3.5 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/12 text-[#2B1B17] text-xs font-semibold inline-flex items-center justify-center gap-2 active:scale-95 transition-transform"
-              >
-                <ClipboardList className="w-4 h-4 text-[#D95D39]" />
-                <span>{t.ordersTrack.trackThisOrder} / {t.ordersTrack.tabMyOrders}</span>
-              </button>
+              {/* 2-Column Quick Shortcuts */}
+              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setOrdersModalOpen(true)}
+                  className="min-h-[44px] px-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                >
+                  <ClipboardList className="w-4 h-4 text-[#F4A261] shrink-0" />
+                  <span className="truncate">{t.moreTab.trackOrdersAction}</span>
+                </button>
 
-              {user ? (
-                orders.filter((o) => o.isCloudSynced).length === 0 ? (
-                  <p className="text-xs text-[#2B1B17]/65">{t.cloudAuth.myOrdersEmpty}</p>
-                ) : (
-                  <div className="space-y-2">
-                    {orders
-                      .filter((o) => o.isCloudSynced)
-                      .slice(0, 3)
-                      .map((order) => (
-                        <div
-                          key={order.id}
-                          className="p-3 rounded-xl bg-[#FAF7F2] space-y-1 text-xs"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (wishlist.length > 0) {
+                      setSavedOnly(true);
+                      setSelectedCategory('all');
+                      setActiveTab('home');
+                    } else {
+                      setActiveTab('categories');
+                    }
+                  }}
+                  className="min-h-[44px] px-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                >
+                  <Heart
+                    className={`w-4 h-4 shrink-0 ${
+                      wishlist.length > 0 ? 'fill-[#D95D39] text-[#D95D39]' : 'text-[#F4A261]'
+                    }`}
+                  />
+                  <span className="truncate tabular-nums">
+                    {t.moreTab.favoritesAction} ({wishlist.length})
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Section 1: Preferences & App Experience (Clean Grouped List) */}
+            <section className="space-y-1.5">
+              <h2 className="font-display font-bold text-xs text-[#2B1B17]/60 px-1.5">
+                {t.moreTab.preferences}
+              </h2>
+
+              <div className="bg-white rounded-2xl border border-[#2B1B17]/10 divide-y divide-[#2B1B17]/8 overflow-hidden">
+                {/* Language Row */}
+                <div className="min-h-[56px] px-3.5 py-2.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-xl bg-[#FAF7F2] text-[#D95D39] flex items-center justify-center shrink-0">
+                      <Globe className="w-4 h-4" />
+                    </span>
+                    <span className="text-xs font-semibold text-[#2B1B17] whitespace-nowrap">
+                      {t.moreTab.language}
+                    </span>
+                  </div>
+                  <div className="inline-flex bg-[#FAF7F2] rounded-xl p-0.5 border border-[#2B1B17]/8 shrink-0">
+                    {(['sw', 'en'] as const).map((lang) => (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => setLanguage(lang)}
+                        className={`min-h-[34px] px-2.5 rounded-lg text-[11px] font-bold transition-colors whitespace-nowrap ${
+                          language === lang
+                            ? 'bg-[#2B1B17] text-white shadow-xs'
+                            : 'text-[#2B1B17]/65'
+                        }`}
+                      >
+                        {lang === 'en' ? 'English' : 'Kiswahili'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Currency Row */}
+                <div className="min-h-[56px] px-3.5 py-2.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-xl bg-[#FAF7F2] text-[#D95D39] flex items-center justify-center shrink-0">
+                      <Coins className="w-4 h-4" />
+                    </span>
+                    <span className="text-xs font-semibold text-[#2B1B17] whitespace-nowrap">
+                      {t.moreTab.currency}
+                    </span>
+                  </div>
+                  <div className="inline-flex bg-[#FAF7F2] rounded-xl p-0.5 border border-[#2B1B17]/8 shrink-0">
+                    {(['TZS', 'USD'] as const).map((curr) => (
+                      <button
+                        key={curr}
+                        type="button"
+                        onClick={() => setCurrency(curr)}
+                        className={`min-h-[34px] px-3 rounded-lg text-[11px] font-bold transition-colors whitespace-nowrap ${
+                          currency === curr
+                            ? 'bg-[#2B1B17] text-white shadow-xs'
+                            : 'text-[#2B1B17]/65'
+                        }`}
+                      >
+                        {curr}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Replay Splash Tour Row */}
+                {hasActiveSplash && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSplash(true)}
+                    className="w-full min-h-[56px] px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-[#FAF7F2]/60 active:bg-[#FAF7F2] transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-9 h-9 rounded-xl bg-[#FAF7F2] text-[#D95D39] flex items-center justify-center shrink-0">
+                        <Smartphone className="w-4 h-4" />
+                      </span>
+                      <span className="text-xs font-semibold text-[#2B1B17] truncate">
+                        {t.splash.replayBtn}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-[#2B1B17]/40 shrink-0" />
+                  </button>
+                )}
+
+                {/* Install PWA Row (only when installable or iOS Safari) */}
+                {!isInstalled && (isInstallable || isIOS) && (
+                  <div className="px-3.5 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-[#2B1B17] truncate">
+                        {t.pwa.cardTitle}
+                      </div>
+                      <div className="text-[11px] text-[#2B1B17]/60 truncate">
+                        {t.pwa.cardSubtitle}
+                      </div>
+                    </div>
+                    <PWAInstallButton variant="header" />
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Section 2: Recent Cloud Orders (clean hairline rows when signed in & present) */}
+            {user && orders.some((o) => o.isCloudSynced) && (
+              <section className="space-y-1.5">
+                <div className="flex items-center justify-between px-1.5">
+                  <h2 className="font-display font-bold text-xs text-[#2B1B17]/60">
+                    {t.cloudAuth.myOrders}
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setOrdersModalOpen(true)}
+                    className="text-[11px] font-semibold text-[#D95D39]"
+                  >
+                    {t.ordersTrack.trackThisOrder}
+                  </button>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-[#2B1B17]/10 divide-y divide-[#2B1B17]/8 overflow-hidden">
+                  {orders
+                    .filter((o) => o.isCloudSynced)
+                    .slice(0, 3)
+                    .map((order) => (
+                      <button
+                        key={order.id}
+                        type="button"
+                        onClick={() => setOrdersModalOpen(true)}
+                        className="w-full min-h-[56px] px-3.5 py-2.5 flex items-center justify-between gap-3 text-left hover:bg-[#FAF7F2]/60"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="font-mono font-bold text-[#2B1B17]">
                               #{order.orderCode || order.id}
                             </span>
-                            <span className="font-bold text-[#D95D39]">
+                            <span aria-hidden="true" className="text-[#2B1B17]/30">
+                              ·
+                            </span>
+                            <span className="font-semibold text-[#D95D39]">
                               {t.admin.orders.statuses[order.status]}
                             </span>
                           </div>
-                          <div className="flex items-center justify-between text-[#2B1B17]/75">
-                            <span className="truncate max-w-[60%]">{order.location}</span>
-                            <span className="font-bold tabular-nums">
-                              {formatRawAmount(order.totalInOrderCurrency, order.currency)}
-                            </span>
-                          </div>
+                          <p className="text-[11px] text-[#2B1B17]/65 truncate mt-0.5">
+                            {order.location}
+                          </p>
                         </div>
-                      ))}
-                  </div>
-                )
-              ) : (
-                <p className="text-xs text-[#2B1B17]/65">{t.ordersTrack.trackHint}</p>
-              )}
-            </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="font-mono font-bold text-xs text-[#2B1B17] tabular-nums">
+                            {formatRawAmount(order.totalInOrderCurrency, order.currency)}
+                          </span>
+                          <ChevronRight className="w-4 h-4 text-[#2B1B17]/35" />
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              </section>
+            )}
 
-            {/* Store Admin Mode Card */}
-            <div className="bg-[#2B1B17] text-[#FAF7F2] rounded-2xl p-4 space-y-2.5">
-              <div className="flex items-center gap-2 text-[#F4A261]">
-                <Shield className="w-4 h-4" />
-                <h2 className="font-display font-bold text-sm">{t.moreTab.adminTitle}</h2>
-              </div>
-              <p className="text-xs text-[#FAF7F2]/75 leading-relaxed">
-                {t.moreTab.adminSubtitle}
-              </p>
-              <button
-                type="button"
-                onClick={() => setAdminMode(true)}
-                className="w-full min-h-[46px] rounded-xl bg-[#D95D39] hover:bg-[#C14C2B] text-white font-semibold text-xs flex items-center justify-center gap-2 active:scale-95 transition-transform"
-              >
-                {t.moreTab.openAdmin}
-              </button>
-            </div>
-
-            {/* Contact & Socials */}
-            <div className="bg-white rounded-2xl p-4 border border-[#2B1B17]/10 space-y-3">
-              <h2 className="font-display font-bold text-sm text-[#2B1B17]">
+            {/* Section 3: Contact & Store Location (Single-line Native Tap Rows) */}
+            <section className="space-y-1.5">
+              <h2 className="font-display font-bold text-xs text-[#2B1B17]/60 px-1.5">
                 {t.moreTab.contactUs}
               </h2>
 
-              <div className="space-y-2.5 text-xs">
+              <div className="bg-white rounded-2xl border border-[#2B1B17]/10 divide-y divide-[#2B1B17]/8 overflow-hidden">
                 <a
                   href="tel:+255651441441"
-                  className="flex items-center justify-between min-h-[44px] px-3 rounded-xl bg-[#FAF7F2]"
+                  className="min-h-[56px] px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-[#FAF7F2]/60 active:bg-[#FAF7F2] transition-colors"
                 >
-                  <span className="inline-flex items-center gap-2 font-semibold text-[#2B1B17]">
-                    <Phone className="w-4 h-4 text-[#D95D39]" />
-                    {t.moreTab.phone}
+                  <span className="inline-flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-xl bg-[#FAF7F2] text-[#D95D39] flex items-center justify-center shrink-0">
+                      <Phone className="w-4 h-4" />
+                    </span>
+                    <span className="text-xs font-semibold text-[#2B1B17] whitespace-nowrap">
+                      {t.moreTab.phone}
+                    </span>
                   </span>
-                  <span className="font-mono font-semibold text-[#2B1B17]/80 tabular-nums">
-                    {PHONE_DISPLAY}
+                  <span className="inline-flex items-center gap-1.5 shrink-0">
+                    <span className="font-mono text-xs font-semibold text-[#2B1B17]/80 tabular-nums whitespace-nowrap">
+                      {PHONE_DISPLAY}
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-[#2B1B17]/35" />
                   </span>
                 </a>
 
@@ -937,34 +1020,78 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                   href={`https://wa.me/${WHATSAPP_NUMBER}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between min-h-[44px] px-3 rounded-xl bg-emerald-50 text-emerald-900"
+                  className="min-h-[56px] px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-emerald-50/40 active:bg-emerald-50/70 transition-colors"
                 >
-                  <span className="inline-flex items-center gap-2 font-semibold">
-                    <MessageCircle className="w-4 h-4 text-emerald-600" />
-                    {t.moreTab.chatWhatsApp}
+                  <span className="inline-flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                      <MessageCircle className="w-4 h-4" />
+                    </span>
+                    <span className="text-xs font-semibold text-[#2B1B17] whitespace-nowrap">
+                      {t.moreTab.whatsapp}
+                    </span>
                   </span>
-                  <span className="font-mono font-semibold tabular-nums">
-                    {WHATSAPP_DISPLAY}
+                  <span className="inline-flex items-center gap-1.5 shrink-0">
+                    <span className="font-mono text-xs font-semibold text-emerald-700 tabular-nums whitespace-nowrap">
+                      {WHATSAPP_DISPLAY}
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-emerald-600/50" />
                   </span>
                 </a>
 
-                <div className="flex items-center justify-between min-h-[44px] px-3 rounded-xl bg-[#FAF7F2]">
-                  <span className="inline-flex items-center gap-2 font-semibold text-[#2B1B17]">
-                    <Instagram className="w-4 h-4 text-[#D95D39]" />
-                    {t.moreTab.socials}
+                <div className="min-h-[56px] px-3.5 py-2.5 flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-xl bg-[#FAF7F2] text-[#D95D39] flex items-center justify-center shrink-0">
+                      <Instagram className="w-4 h-4" />
+                    </span>
+                    <span className="text-xs font-semibold text-[#2B1B17] whitespace-nowrap">
+                      Instagram
+                    </span>
                   </span>
-                  <span className="text-[#2B1B17]/75">@shakazulu_store</span>
+                  <span className="text-xs font-medium text-[#2B1B17]/75 whitespace-nowrap">
+                    @shakazulu_store
+                  </span>
                 </div>
 
-                <div className="flex items-center justify-between min-h-[44px] px-3 rounded-xl bg-[#FAF7F2]">
-                  <span className="inline-flex items-center gap-2 font-semibold text-[#2B1B17]">
-                    <MapPin className="w-4 h-4 text-[#D95D39]" />
-                    {t.moreTab.location}
+                <div className="min-h-[56px] px-3.5 py-2.5 flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-xl bg-[#FAF7F2] text-[#D95D39] flex items-center justify-center shrink-0">
+                      <MapPin className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-[#2B1B17] truncate">
+                        Dar es Salaam, Tanzania
+                      </div>
+                      <div className="text-[11px] text-[#2B1B17]/55 inline-flex items-center gap-1 truncate">
+                        <Clock className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{t.moreTab.hoursShort}</span>
+                      </div>
+                    </div>
                   </span>
-                  <span className="text-[#2B1B17]/75">Dar es Salaam, TZ</span>
                 </div>
               </div>
-            </div>
+            </section>
+
+            {/* Section 4: Sleek Compact Store Admin Entry Row */}
+            <button
+              type="button"
+              onClick={() => setAdminMode(true)}
+              className="w-full min-h-[60px] px-3.5 py-3 rounded-2xl bg-white hover:bg-[#FAF7F2]/80 border border-[#2B1B17]/10 flex items-center justify-between gap-3 text-left active:scale-[0.99] transition-all shadow-xs"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="w-10 h-10 rounded-xl bg-[#2B1B17] text-[#F4A261] flex items-center justify-center shrink-0">
+                  <Shield className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <div className="font-display font-bold text-xs text-[#2B1B17] truncate">
+                    {t.moreTab.adminTitle}
+                  </div>
+                  <div className="text-[11px] text-[#2B1B17]/60 truncate">
+                    {t.moreTab.adminSubtitle}
+                  </div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-[#2B1B17]/45 shrink-0" />
+            </button>
           </div>
         )}
       </main>

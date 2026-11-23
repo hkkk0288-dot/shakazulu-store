@@ -520,6 +520,27 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "SplashSettings": {
+      "title": "SplashSettings",
+      "description": "Mobile onboarding splash screen configuration managed by store admins.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the mobile splash onboarding screen is active."
+        },
+        "slides": {
+          "type": "array",
+          "description": "Up to 6 customizable splash onboarding slides."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": ["enabled", "slides", "updatedAt"]
     }
   },
   "firestore": {
@@ -550,6 +571,10 @@
     "/orderTracking/{trackingId}": {
       "schema": { "$ref": "#/entities/OrderTracking" },
       "description": "Zero-PII single-document order status tracking keyed by orderCode."
+    },
+    "/storeSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/SplashSettings" },
+      "description": "Publicly readable store UI settings (e.g. splash screen configuration), writable only by admins."
     }
   }
 }

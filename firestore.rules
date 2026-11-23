@@ -192,6 +192,40 @@ service cloud.firestore {
         (!('dispatchedAt' in data) || data.dispatchedAt is timestamp);
     }
 
+    function isValidSplashSlide(slide) {
+      return slide is map &&
+        slide.keys().hasAll([
+          'id', 'kickerEn', 'kickerSw', 'titleEn', 'titleSw',
+          'bodyEn', 'bodySw', 'badgeEn', 'badgeSw', 'gradientFrom', 'gradientTo'
+        ]) &&
+        slide.keys().hasOnly([
+          'id', 'kickerEn', 'kickerSw', 'titleEn', 'titleSw',
+          'bodyEn', 'bodySw', 'badgeEn', 'badgeSw', 'image', 'gradientFrom', 'gradientTo'
+        ]) &&
+        isValidId(slide.id) &&
+        slide.kickerEn is string && slide.kickerEn.size() <= 120 &&
+        slide.kickerSw is string && slide.kickerSw.size() <= 120 &&
+        slide.titleEn is string && slide.titleEn.size() >= 1 && slide.titleEn.size() <= 160 &&
+        slide.titleSw is string && slide.titleSw.size() >= 1 && slide.titleSw.size() <= 160 &&
+        slide.bodyEn is string && slide.bodyEn.size() <= 400 &&
+        slide.bodySw is string && slide.bodySw.size() <= 400 &&
+        slide.badgeEn is string && slide.badgeEn.size() <= 100 &&
+        slide.badgeSw is string && slide.badgeSw.size() <= 100 &&
+        (!('image' in slide) || (slide.image is string && slide.image.size() <= 160000)) &&
+        slide.gradientFrom is string && slide.gradientFrom.size() <= 24 && slide.gradientFrom.matches('^#[0-9a-fA-F]{6}$') &&
+        slide.gradientTo is string && slide.gradientTo.size() <= 24 && slide.gradientTo.matches('^#[0-9a-fA-F]{6}$');
+    }
+
+    function isValidSplashSettings(data) {
+      return data.keys().hasAll(['enabled', 'slides', 'updatedAt']) &&
+        data.keys().hasOnly(['enabled', 'slides', 'updatedAt']) &&
+        data.enabled is bool &&
+        data.slides is list &&
+        data.slides.size() <= 6 &&
+        (data.slides.size() == 0 || isValidSplashSlide(data.slides[0])) &&
+        data.updatedAt is timestamp;
+    }
+
     // --- Collection Rules ---
 
     // Admins collection
@@ -287,6 +321,15 @@ service cloud.firestore {
         incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'packedAt', 'dispatchedAt']);
       allow delete: if isAdmin() && isValidId(trackingId);
+    }
+
+    // Public store UI settings (non-PII, writable only by admins)
+    match /storeSettings/{settingId} {
+      allow get: if isValidId(settingId) && settingId == 'splash';
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() && isValidId(settingId) && settingId == 'splash' &&
+        isValidSplashSettings(incoming()) && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(settingId) && settingId == 'splash';
     }
   }
 }

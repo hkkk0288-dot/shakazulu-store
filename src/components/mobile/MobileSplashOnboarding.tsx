@@ -1,52 +1,44 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowRight, PackageCheck, ShieldCheck, ShoppingBag, Truck } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
+import { SplashConfig } from '../../types';
 
 interface MobileSplashOnboardingProps {
   open: boolean;
   isScopedFrame?: boolean;
+  overrideConfig?: SplashConfig;
   onFinish: () => void;
 }
 
-const SLIDE_VISUALS = [
-  {
-    image: '/src/assets/images/product_red_ubuyu_1795463732331.jpg',
-    fallbackGradient: 'linear-gradient(155deg, #D95D39 0%, #5B1E17 55%, #2B1B17 100%)',
-    icon: ShoppingBag,
-    highlightMetricSw: '100% Asilia · Zanzibar',
-    highlightMetricEn: '100% Natural · Zanzibar',
-  },
-  {
-    image: '/src/assets/images/product_roasted_cashews_1795463732839.jpg',
-    fallbackGradient: 'linear-gradient(155deg, #B5692D 0%, #4E2C1B 55%, #2B1B17 100%)',
-    icon: PackageCheck,
-    highlightMetricSw: 'Punguzo la 15–20% Jumla',
-    highlightMetricEn: '15–20% Auto Wholesale',
-  },
-  {
-    image: '/src/assets/images/product_pilau_masala_1795463732824.jpg',
-    fallbackGradient: 'linear-gradient(155deg, #8E3B23 0%, #3F2218 55%, #2B1B17 100%)',
-    icon: Truck,
-    highlightMetricSw: 'M-Pesa · Mikoani · DHL Export',
-    highlightMetricEn: 'M-Pesa · Upcountry · DHL Export',
-  },
-] as const;
+const SLIDE_ICONS = [ShoppingBag, PackageCheck, Truck] as const;
 
 export const MobileSplashOnboarding: React.FC<MobileSplashOnboardingProps> = ({
   open,
   isScopedFrame = false,
+  overrideConfig,
   onFinish,
 }) => {
-  const { language, setLanguage, t } = useStore();
+  const { language, setLanguage, splashConfig, t } = useStore();
   const [step, setStep] = useState(0);
-  const [failedImages, setFailedImages] = useState<Record<number, boolean>>({});
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
   const touchStartXRef = useRef<number | null>(null);
 
-  if (!open) return null;
-
-  const slides = t.splash.slides;
+  const activeConfig = overrideConfig ?? splashConfig;
+  const slides = activeConfig.slides;
   const totalSlides = slides.length;
-  const isLastSlide = step === totalSlides - 1;
+  const shouldShow =
+    open && totalSlides > 0 && (Boolean(overrideConfig) || activeConfig.enabled);
+
+  useEffect(() => {
+    if (open) {
+      setStep(0);
+    }
+  }, [open, totalSlides]);
+
+  if (!shouldShow) return null;
+
+  const safeStep = Math.min(step, totalSlides - 1);
+  const isLastSlide = safeStep === totalSlides - 1;
   const positionClass = isScopedFrame ? 'absolute' : 'fixed';
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
@@ -59,10 +51,10 @@ export const MobileSplashOnboarding: React.FC<MobileSplashOnboardingProps> = ({
     const deltaX = endX - touchStartXRef.current;
     touchStartXRef.current = null;
 
-    if (deltaX < -42 && step < totalSlides - 1) {
-      setStep((prev) => prev + 1);
-    } else if (deltaX > 42 && step > 0) {
-      setStep((prev) => prev - 1);
+    if (deltaX < -42 && safeStep < totalSlides - 1) {
+      setStep((prev) => Math.min(totalSlides - 1, prev + 1));
+    } else if (deltaX > 42 && safeStep > 0) {
+      setStep((prev) => Math.max(0, prev - 1));
     }
   };
 
@@ -79,6 +71,8 @@ export const MobileSplashOnboarding: React.FC<MobileSplashOnboardingProps> = ({
     setStep(0);
     onFinish();
   };
+
+  const formatCounter = (n: number) => String(n).padStart(2, '0');
 
   return (
     <div
@@ -132,43 +126,55 @@ export const MobileSplashOnboarding: React.FC<MobileSplashOnboardingProps> = ({
         </div>
       </div>
 
-      {/* Sliding 3-Screen Viewport */}
+      {/* Sliding Viewport */}
       <div className="relative flex-1 overflow-hidden">
         <div
           className="flex h-full transition-transform duration-300 ease-out"
-          style={{ transform: `translateX(-${step * 100}%)` }}
+          style={{ transform: `translateX(-${safeStep * 100}%)` }}
         >
           {slides.map((slide, idx) => {
-            const visual = SLIDE_VISUALS[idx] ?? SLIDE_VISUALS[0];
-            const Icon = visual.icon;
-            const imgFailed = failedImages[idx];
+            const Icon = SLIDE_ICONS[idx % SLIDE_ICONS.length];
+            const imageSrc = slide.image?.trim() || '';
+            const imageErrorKey = `${slide.id}:${imageSrc}`;
+            const showImage = Boolean(imageSrc) && !failedImages[imageErrorKey];
+
+            const kicker =
+              language === 'sw' ? slide.kickerSw || slide.kickerEn : slide.kickerEn || slide.kickerSw;
+            const title =
+              language === 'sw' ? slide.titleSw || slide.titleEn : slide.titleEn || slide.titleSw;
+            const body =
+              language === 'sw' ? slide.bodySw || slide.bodyEn : slide.bodyEn || slide.bodySw;
+            const badge =
+              language === 'sw' ? slide.badgeSw || slide.badgeEn : slide.badgeEn || slide.badgeSw;
 
             return (
               <div
-                key={slide.title}
+                key={slide.id}
                 className="w-full h-full shrink-0 flex flex-col justify-between px-5 pt-2 pb-4"
               >
                 {/* Framed Editorial Visual Canvas */}
                 <div
                   className="relative flex-1 min-h-[240px] max-h-[54vh] rounded-3xl overflow-hidden shadow-2xl border border-white/10"
-                  style={{ background: visual.fallbackGradient }}
+                  style={{
+                    background: `linear-gradient(155deg, ${slide.gradientFrom} 0%, ${slide.gradientTo} 100%)`,
+                  }}
                 >
-                  {!imgFailed ? (
+                  {showImage ? (
                     <img
-                      src={visual.image}
-                      alt={slide.title}
+                      src={imageSrc}
+                      alt={title}
                       referrerPolicy="no-referrer"
                       onError={() =>
                         setFailedImages((prev) => ({
                           ...prev,
-                          [idx]: true,
+                          [imageErrorKey]: true,
                         }))
                       }
                       className="w-full h-full object-cover"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <Icon className="w-16 h-16 text-[#F4A261]/70" />
+                      <Icon className="w-16 h-16 text-[#F4A261]/75" />
                     </div>
                   )}
 
@@ -178,32 +184,34 @@ export const MobileSplashOnboarding: React.FC<MobileSplashOnboardingProps> = ({
                     className="absolute inset-0 bg-gradient-to-t from-[#2B1B17] via-[#2B1B17]/30 to-transparent"
                   />
 
-                  {/* Quiet index & domain proof at bottom of visual frame (no pill clutter) */}
+                  {/* Quiet index & domain proof at bottom of visual frame */}
                   <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between gap-2 text-xs text-white/90">
                     <span className="font-mono font-bold tabular-nums text-[#F4A261]">
-                      0{idx + 1} / 0{totalSlides}
+                      {formatCounter(idx + 1)} / {formatCounter(totalSlides)}
                     </span>
-                    <span className="inline-flex items-center gap-1.5 font-semibold truncate">
-                      <ShieldCheck className="w-3.5 h-3.5 text-[#F4A261] shrink-0" />
-                      <span className="truncate">
-                        {language === 'sw' ? visual.highlightMetricSw : visual.highlightMetricEn}
+                    {badge && (
+                      <span className="inline-flex items-center gap-1.5 font-semibold truncate">
+                        <ShieldCheck className="w-3.5 h-3.5 text-[#F4A261] shrink-0" />
+                        <span className="truncate">{badge}</span>
                       </span>
-                    </span>
+                    )}
                   </div>
                 </div>
 
                 {/* Editorial Typography Block */}
                 <div className="pt-5 space-y-2.5">
-                  <p className="text-xs font-semibold text-[#F4A261] tracking-wide">
-                    {slide.kicker}
-                  </p>
+                  {kicker && (
+                    <p className="text-xs font-semibold text-[#F4A261] tracking-wide">{kicker}</p>
+                  )}
                   <h1
                     className="font-display font-extrabold text-2xl leading-tight text-white"
                     style={{ textWrap: 'balance' }}
                   >
-                    {slide.title}
+                    {title}
                   </h1>
-                  <p className="text-sm text-[#FAF7F2]/80 leading-relaxed">{slide.body}</p>
+                  {body && (
+                    <p className="text-sm text-[#FAF7F2]/80 leading-relaxed">{body}</p>
+                  )}
                 </div>
               </div>
             );
@@ -213,29 +221,35 @@ export const MobileSplashOnboarding: React.FC<MobileSplashOnboardingProps> = ({
 
       {/* Bottom Ergonomic Thumb Zone Controls */}
       <div className="px-5 pt-2 pb-6 pb-safe space-y-4 shrink-0 bg-gradient-to-t from-[#2B1B17] via-[#2B1B17] to-transparent">
-        {/* Interactive Progress Dots */}
-        <div className="flex items-center justify-center gap-2" role="tablist" aria-label="Onboarding steps">
-          {slides.map((_, idx) => {
-            const active = idx === step;
-            return (
-              <button
-                key={idx}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                aria-label={`Slide ${idx + 1}`}
-                onClick={() => setStep(idx)}
-                className="min-h-[32px] px-1 flex items-center justify-center"
-              >
-                <span
-                  className={`h-2 rounded-full transition-all duration-200 ${
-                    active ? 'w-7 bg-[#D95D39]' : 'w-2 bg-white/30 hover:bg-white/50'
-                  }`}
-                />
-              </button>
-            );
-          })}
-        </div>
+        {/* Interactive Progress Dots (shown when > 1 slide) */}
+        {totalSlides > 1 && (
+          <div
+            className="flex items-center justify-center gap-2"
+            role="tablist"
+            aria-label="Onboarding steps"
+          >
+            {slides.map((s, idx) => {
+              const active = idx === safeStep;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-label={`Slide ${idx + 1}`}
+                  onClick={() => setStep(idx)}
+                  className="min-h-[32px] px-1 flex items-center justify-center"
+                >
+                  <span
+                    className={`h-2 rounded-full transition-all duration-200 ${
+                      active ? 'w-7 bg-[#D95D39]' : 'w-2 bg-white/30 hover:bg-white/50'
+                    }`}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Primary Thumb CTA */}
         <button

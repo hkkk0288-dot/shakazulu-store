@@ -1,4 +1,4 @@
-import { CategoryItem, ComboBundle, Coupon, CustomerReview, Order, Product } from '../types';
+import { CategoryItem, ComboBundle, Coupon, CustomerReview, Order, Product, SplashConfig } from '../types';
 
 export const SEED_CATEGORIES: CategoryItem[] = [
   { id: 'ubuyu_achari', nameEn: 'Ubuyu & Achari', nameSw: 'Ubuyu & Achari' },
@@ -553,4 +553,91 @@ export const CUSTOMER_REVIEWS: CustomerReview[] = [
       'Pilau masala na korosho zilizofungwa kwa vacuum zilifika London kwa DHL zikiwa bado na harufu nzuri na ubora wa juu.',
   },
 ];
+
+export const SPLASH_PRESET_IMAGES: { id: string; labelEn: string; labelSw: string; url: string }[] = [
+  {
+    id: 'preset-ubuyu',
+    labelEn: 'Zanzibar Red Ubuyu',
+    labelSw: 'Ubuyu Mwekundu',
+    url: '/src/assets/images/product_red_ubuyu_1795463732331.jpg',
+  },
+  {
+    id: 'preset-cream-ubuyu',
+    labelEn: 'Cream Ubuyu',
+    labelSw: 'Ubuyu Mweupe',
+    url: '/src/assets/images/product_cream_ubuyu_1795463732448.jpg',
+  },
+  {
+    id: 'preset-cashews',
+    labelEn: 'Roasted Cashews',
+    labelSw: 'Korosho za Kukaanga',
+    url: '/src/assets/images/product_roasted_cashews_1795463732839.jpg',
+  },
+  {
+    id: 'preset-masala',
+    labelEn: 'Pilau Masala',
+    labelSw: 'Pilau Masala',
+    url: '/src/assets/images/product_pilau_masala_1795463732824.jpg',
+  },
+  {
+    id: 'preset-achari',
+    labelEn: 'Mango Achari',
+    labelSw: 'Achari ya Embe',
+    url: '/src/assets/images/product_mango_achari_1795463734086.jpg',
+  },
+];
+
+export const DEFAULT_SPLASH_CONFIG: SplashConfig = {
+  enabled: true,
+  slides: [
+    {
+      id: 'splash-1',
+      kickerEn: 'Dar es Salaam · Zanzibar Heritage',
+      kickerSw: 'Dar es Salaam · Asili ya Zanzibar',
+      titleEn: 'Fresh Zanzibari Ubuyu, Cashews & Coastal Spices.',
+      titleSw: 'Ubuyu Halisi wa Zanzibar, Korosho & Viungo vya Pwani.',
+      bodyEn:
+        'Handpicked and packed fresh every week using authentic coastal recipes — zero artificial preservatives.',
+      bodySw:
+        'Vinafungashwa vipya kila wiki kwa mapishi asilia ya pwani — bila kemikali wala vihifadhi bandia.',
+      badgeEn: '100% Natural · Zanzibar',
+      badgeSw: '100% Asilia · Zanzibar',
+      image: '/src/assets/images/product_red_ubuyu_1795463732331.jpg',
+      gradientFrom: '#D95D39',
+      gradientTo: '#2B1B17',
+    },
+    {
+      id: 'splash-2',
+      kickerEn: 'Retail 250g · Wholesale 5kg Buckets',
+      kickerSw: 'Rejareja 250g · Ndoo za Jumla 5kg',
+      titleEn: 'Save up to 20% Automatically on Bulk Orders.',
+      titleSw: 'Okoa Hadi 20% Moja kwa Moja kwa Oda za Jumla.',
+      bodyEn:
+        'Pick any 5kg bucket or 5+ packs to unlock instant wholesale pricing for your shop, home, or events.',
+      bodySw:
+        'Chagua ndoo ya 5kg au pakiti 5+ kupata bei ya jumla papo hapo kwa duka lako, nyumbani au sherehe.',
+      badgeEn: '15–20% Auto Wholesale',
+      badgeSw: 'Punguzo la 15–20% Jumla',
+      image: '/src/assets/images/product_roasted_cashews_1795463732839.jpg',
+      gradientFrom: '#B5692D',
+      gradientTo: '#2B1B17',
+    },
+    {
+      id: 'splash-3',
+      kickerEn: 'Dar Delivery · Mikoani · Worldwide DHL',
+      kickerSw: 'Dar · Mabasi ya Mikoani · DHL Duniani',
+      titleEn: 'Vacuum-Sealed & Tracked to Your Door.',
+      titleSw: 'Vifungashio vya Vacuum & Ufuatiliaji Mubashara.',
+      bodyEn:
+        'Order via M-Pesa, Mixx by Yas, Airtel Money, or WhatsApp and track dispatch live with your order code.',
+      bodySw:
+        'Lipa kwa M-Pesa, Mixx by Yas, Airtel Money au WhatsApp kisha fuatilia mzigo wako kwa namba ya oda.',
+      badgeEn: 'M-Pesa · Upcountry · DHL Export',
+      badgeSw: 'M-Pesa · Mikoani · DHL Export',
+      image: '/src/assets/images/product_pilau_masala_1795463732824.jpg',
+      gradientFrom: '#8E3B23',
+      gradientTo: '#2B1B17',
+    },
+  ],
+};
 
