@@ -5,6 +5,7 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -43,13 +44,16 @@ import {
   Product,
   ProductBadge,
   SizeOption,
+  TrackedOrderResult,
 } from '../types';
 import { calculateLinePricing, convertTzsToCurrency } from '../utils/pricing';
+import { computeTrackingHash, normalizePhoneSuffix } from '../utils/tracking';
 
 const STORAGE_KEYS = {
   products: 'shakazulu_products_v1',
   orders: 'shakazulu_orders_v1',
   cart: 'shakazulu_cart_v1',
+  wishlist: 'shakazulu_wishlist_v1',
   language: 'shakazulu_lang_v1',
   currency: 'shakazulu_currency_v1',
   vacuumPacked: 'shakazulu_vacuum_v1',
@@ -101,6 +105,7 @@ interface StoreContextValue {
   orders: Order[];
   coupons: Coupon[];
   cart: CartItem[];
+  wishlist: string[];
   language: Language;
   currency: Currency;
   vacuumPacked: boolean;
@@ -122,10 +127,13 @@ interface StoreContextValue {
   unlockAdmin: () => void;
   setPreviewMode: (mode: PreviewMode) => void;
   showToast: (msg: string) => void;
+  toggleWishlist: (productId: string) => void;
+  isInWishlist: (productId: string) => boolean;
   signInWithGoogle: () => Promise<void>;
   signOutUser: () => Promise<void>;
   seedCatalogToCloud: () => Promise<void>;
   loadOrderItems: (orderId: string) => Promise<OrderItemSnapshot[]>;
+  trackOrderByCode: (orderCode: string, phone: string) => Promise<TrackedOrderResult | null>;
   applyPromoCode: (rawCode: string) => boolean;
   removePromoCode: () => void;
   addBundleToCart: (bundle: ComboBundle) => void;
@@ -181,6 +189,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [cart, setCart] = useState<CartItem[]>(() =>
     safeReadStorage<CartItem[]>(STORAGE_KEYS.cart, [])
+  );
+  const [wishlist, setWishlist] = useState<string[]>(() =>
+    safeReadStorage<string[]>(STORAGE_KEYS.wishlist, [])
   );
   const [language, setLanguageState] = useState<Language>(() =>
     safeReadStorage<Language>(STORAGE_KEYS.language, 'en')
@@ -246,6 +257,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             basePrice250g: Number(data.basePrice250g || 4000),
             wholesaleDiscount: Number(data.wholesaleDiscount ?? 15),
             inStock: Boolean(data.inStock),
+            stockCount: typeof data.stockCount === 'number' ? data.stockCount : undefined,
             rating: Number(data.rating ?? 5),
             reviewCount: Number(data.reviewCount ?? 1),
             badge,
@@ -356,6 +368,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const feeVal = Number(data.deliveryFeeTzs);
           return {
             id: d.id,
+            orderCode: String(data.orderCode || d.id),
             userId: String(data.userId || ''),
             customerName: String(data.customerName || 'Customer'),
             customerPhone: String(data.customerPhone || '-'),
@@ -456,6 +469,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [cart]);
 
   useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.wishlist, wishlist);
+  }, [wishlist]);
+
+  useEffect(() => {
     safeWriteStorage(STORAGE_KEYS.language, language);
   }, [language]);
 
@@ -495,6 +512,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setCurrency = useCallback((curr: Currency) => setCurrencyState(curr), []);
   const setVacuumPacked = useCallback((val: boolean) => setVacuumPackedState(val), []);
   const unlockAdmin = useCallback(() => setAdminUnlocked(true), []);
+
+  const toggleWishlist = useCallback((productId: string) => {
+    setWishlist((prev) =>
+      prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId]
+    );
+  }, []);
+
+  const isInWishlist = useCallback(
+    (productId: string) => wishlist.includes(productId),
+    [wishlist]
+  );
 
   const signInWithGoogle = useCallback(async () => {
     try {
@@ -591,6 +619,72 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     },
     [orders, user]
+  );
+
+  const trackOrderByCode = useCallback(
+    async (rawCode: string, rawPhone: string): Promise<TrackedOrderResult | null> => {
+      const cleanCode = rawCode.trim().toUpperCase().replace(/^#/, '');
+      const cleanSuffix = normalizePhoneSuffix(rawPhone);
+      if (!cleanCode || cleanSuffix.length < 4) return null;
+
+      // 1. Check orders already visible in state (local guest orders or user's cloud orders)
+      const localMatch = orders.find(
+        (o) =>
+          (o.orderCode || o.id).toUpperCase() === cleanCode ||
+          o.id.toUpperCase() === cleanCode
+      );
+      if (localMatch) {
+        const orderSuffix = normalizePhoneSuffix(localMatch.customerPhone);
+        if (orderSuffix === cleanSuffix || localMatch.customerPhone === '-') {
+          const packedLog = localMatch.statusHistory.find((h) => h.status === 'packed')?.at;
+          const dispatchedLog = localMatch.statusHistory.find((h) => h.status === 'dispatched')?.at;
+          return {
+            orderCode: localMatch.orderCode || localMatch.id,
+            status: localMatch.status,
+            type: localMatch.type,
+            deliveryMethod: localMatch.deliveryMethod,
+            itemCount: localMatch.itemCount || localMatch.items.length || 1,
+            totalTzs: localMatch.totalTzs,
+            currency: localMatch.currency,
+            totalInOrderCurrency: localMatch.totalInOrderCurrency,
+            createdAt: localMatch.createdAt,
+            packedAt: packedLog,
+            dispatchedAt: dispatchedLog,
+            location: localMatch.location,
+            itemsSummary: localMatch.itemsSummary,
+            isLocal: !localMatch.isCloudSynced,
+          };
+        }
+      }
+
+      // 2. Zero-PII Cloud Lookup on /orderTracking/{orderCode}
+      try {
+        const snap = await getDoc(doc(db, 'orderTracking', cleanCode));
+        if (!snap.exists()) return null;
+        const data = snap.data();
+        const expectedHash = await computeTrackingHash(cleanCode, rawPhone);
+        if (data.verifyHash !== expectedHash) {
+          return null;
+        }
+        return {
+          orderCode: String(data.orderCode || cleanCode),
+          status: (data.status as OrderStatus) || 'pending',
+          type: (data.type as OrderType) || 'retail',
+          deliveryMethod: (data.deliveryMethod as DeliveryMethod) || 'dar_delivery',
+          itemCount: Number(data.itemCount || 1),
+          totalTzs: Number(data.totalTzs || 0),
+          currency: data.currency === 'USD' ? 'USD' : 'TZS',
+          totalInOrderCurrency: Number(data.totalInOrderCurrency || 0),
+          createdAt: tsToIso(data.createdAt),
+          packedAt: data.packedAt ? tsToIso(data.packedAt) : undefined,
+          dispatchedAt: data.dispatchedAt ? tsToIso(data.dispatchedAt) : undefined,
+        };
+      } catch (err) {
+        console.error('Order lookup error:', err);
+        return null;
+      }
+    },
+    [orders]
   );
 
   const addToCart = useCallback(
@@ -813,6 +907,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const newOrder: Order = {
         id: orderCode,
+        orderCode,
         userId: user?.uid,
         customerName: (input.customerName.trim() || 'Guest Customer').slice(0, 120),
         customerPhone: (input.customerPhone.trim() || '-').slice(0, 40),
@@ -844,6 +939,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (user && user.emailVerified && snapshots.length > 0) {
         const orderPath = `orders/${orderDocId}`;
         try {
+          const verifyHash = await computeTrackingHash(orderCode, newOrder.customerPhone);
           const batch = writeBatch(db);
           const orderRef = doc(db, 'orders', orderDocId);
           const orderPayload: Record<string, unknown> = {
@@ -878,6 +974,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
           batch.set(orderRef, orderPayload);
 
+          // Zero-PII public lookup doc
+          batch.set(doc(db, 'orderTracking', orderCode), {
+            orderCode,
+            verifyHash,
+            status: 'pending',
+            type: newOrder.type,
+            deliveryMethod: newOrder.deliveryMethod,
+            itemCount: snapshots.length,
+            totalTzs: newOrder.totalTzs,
+            currency: newOrder.currency,
+            totalInOrderCurrency: newOrder.totalInOrderCurrency,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+
           snapshots.forEach((snapItem, idx) => {
             const itemRef = doc(db, 'orders', orderDocId, 'items', `item-${idx}`);
             batch.set(itemRef, {
@@ -902,12 +1013,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setLocalOrders((prev) => [newOrder, ...prev]);
       }
 
+      // Decrement local inventory stock counts if tracked
+      if (!cloudProducts) {
+        setLocalProducts((prev) =>
+          prev.map((prod) => {
+            if (typeof prod.stockCount !== 'number') return prod;
+            const orderedUnits = snapshots
+              .filter((s) => s.productId === prod.id)
+              .reduce((sum, s) => sum + s.quantity, 0);
+            if (orderedUnits <= 0) return prod;
+            const nextCount = Math.max(0, prod.stockCount - orderedUnits);
+            return {
+              ...prod,
+              stockCount: nextCount,
+              inStock: nextCount > 0 ? prod.inStock : false,
+            };
+          })
+        );
+      }
+
       setCart([]);
       setVacuumPackedState(false);
       setAppliedCouponCode(null);
       return newOrder;
     },
-    [cartSummary, appliedCoupon, currency, orders.length, user]
+    [cartSummary, appliedCoupon, currency, orders.length, user, cloudProducts]
   );
 
   const updateProduct = useCallback(
@@ -923,6 +1053,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         if (typeof updates.inStock === 'boolean') {
           allowedUpdates.inStock = updates.inStock;
+        }
+        if (typeof updates.stockCount === 'number') {
+          allowedUpdates.stockCount = Math.max(0, Math.min(100000, Math.round(updates.stockCount)));
         }
         if (typeof updates.nameEn === 'string') {
           allowedUpdates.nameEn = updates.nameEn.trim().slice(0, 120);
@@ -1021,6 +1154,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           basePrice250g: Math.max(100, Math.round(created.basePrice250g)),
           wholesaleDiscount: Math.max(0, Math.min(40, Math.round(created.wholesaleDiscount))),
           inStock: created.inStock,
+          ...(typeof created.stockCount === 'number'
+            ? { stockCount: Math.max(0, Math.min(100000, Math.round(created.stockCount))) }
+            : {}),
           rating: created.rating,
           reviewCount: created.reviewCount,
           badge: badgeVal ?? 'none',
@@ -1182,6 +1318,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateDoc(doc(db, 'orders', orderId), updates).catch((error) => {
           handleFirestoreError(error, OperationType.UPDATE, path);
         });
+        if (target.orderCode) {
+          updateDoc(doc(db, 'orderTracking', target.orderCode), updates).catch(() => {
+            // Older orders may not have a tracking doc; ignore safely
+          });
+        }
       } else {
         const nowIso = new Date().toISOString();
         setLocalOrders((prev) =>
@@ -1225,6 +1366,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     orders,
     coupons,
     cart,
+    wishlist,
     language,
     currency,
     vacuumPacked,
@@ -1246,10 +1388,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     unlockAdmin,
     setPreviewMode,
     showToast,
+    toggleWishlist,
+    isInWishlist,
     signInWithGoogle,
     signOutUser,
     seedCatalogToCloud,
     loadOrderItems,
+    trackOrderByCode,
     applyPromoCode,
     removePromoCode,
     addBundleToCart,

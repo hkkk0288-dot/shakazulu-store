@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Minus, Plus, ShieldCheck, ShoppingBag, Star, Tag, TrendingUp, X } from 'lucide-react';
+import { Heart, Minus, Plus, Share2, ShieldCheck, ShoppingBag, Star, Tag, TrendingUp, X } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { Product, SizeOption } from '../../types';
 import {
@@ -26,7 +26,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   isScopedFrame = false,
   onClose,
 }) => {
-  const { language, currency, t, getCategoryLabel, addToCart } = useStore();
+  const { language, currency, t, getCategoryLabel, addToCart, isInWishlist, toggleWishlist, showToast } = useStore();
   const [size, setSize] = useState<SizeOption>(initialSize);
   const [qty, setQty] = useState<number>(1);
 
@@ -36,6 +36,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   }, [product, initialSize]);
 
   if (!product) return null;
+
+  const favorited = isInWishlist(product.id);
+  const isLowStock =
+    product.inStock &&
+    typeof product.stockCount === 'number' &&
+    product.stockCount > 0 &&
+    product.stockCount <= 5;
 
   const name = getDisplayProductName(product, language);
   const description = language === 'sw' ? product.descriptionSw : product.descriptionEn;
@@ -57,6 +64,25 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     if (!product.inStock) return;
     addToCart(product.id, size, qty);
     onClose();
+  };
+
+  const handleShare = async () => {
+    const shareUrl = `${window.location.origin}/?product=${encodeURIComponent(product.id)}`;
+    const shareTitle = `${name} — ${t.brandName}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: shareTitle, text: description, url: shareUrl });
+        return;
+      } catch {
+        // Fallback to clipboard copy
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      showToast(t.product.linkCopied);
+    } catch {
+      showToast(shareUrl);
+    }
   };
 
   const positionClass = isScopedFrame ? 'absolute' : 'fixed';
@@ -102,7 +128,36 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   {product.rating.toFixed(1)} ({product.reviewCount})
                 </span>
               </div>
-              <h2 className="font-display text-xl font-bold text-[#2B1B17]">{name}</h2>
+              <div className="flex items-start justify-between gap-2">
+                <h2 className="font-display text-xl font-bold text-[#2B1B17]">{name}</h2>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleWishlist(product.id)}
+                    aria-label={favorited ? t.product.favoriteRemove : t.product.favoriteAdd}
+                    className="w-9 h-9 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/10 flex items-center justify-center"
+                  >
+                    <Heart
+                      className={`w-4 h-4 ${
+                        favorited ? 'fill-[#D95D39] text-[#D95D39]' : 'text-[#2B1B17]/70'
+                      }`}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleShare()}
+                    aria-label={t.product.shareBtn}
+                    className="w-9 h-9 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/10 flex items-center justify-center"
+                  >
+                    <Share2 className="w-4 h-4 text-[#2B1B17]/75" />
+                  </button>
+                </div>
+              </div>
+              {isLowStock && (
+                <div className="mt-1 inline-block px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[11px] font-bold">
+                  {t.product.lowStock.replace('{n}', String(product.stockCount))}
+                </div>
+              )}
               <p className="mt-1.5 text-sm text-[#2B1B17]/75 leading-relaxed">{description}</p>
             </div>
 
@@ -285,9 +340,34 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <span>{origin}</span>
             </div>
 
-            <h2 className="font-display text-2xl font-bold text-[#2B1B17] leading-tight">{name}</h2>
+            <div className="flex items-start justify-between gap-2">
+              <h2 className="font-display text-2xl font-bold text-[#2B1B17] leading-tight">{name}</h2>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => toggleWishlist(product.id)}
+                  aria-label={favorited ? t.product.favoriteRemove : t.product.favoriteAdd}
+                  className="w-9 h-9 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/10 flex items-center justify-center"
+                >
+                  <Heart
+                    className={`w-4 h-4 ${
+                      favorited ? 'fill-[#D95D39] text-[#D95D39]' : 'text-[#2B1B17]/70'
+                    }`}
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleShare()}
+                  aria-label={t.product.shareBtn}
+                  className="h-9 px-2.5 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/10 text-xs font-semibold text-[#2B1B17] inline-flex items-center gap-1"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-[#D95D39]" />
+                  <span>{t.product.shareBtn}</span>
+                </button>
+              </div>
+            </div>
 
-            <div className="flex items-center gap-2 text-xs text-[#2B1B17]/75">
+            <div className="flex items-center gap-2 text-xs text-[#2B1B17]/75 flex-wrap">
               <span className="inline-flex items-center gap-1 font-semibold text-[#2B1B17]">
                 <Star className="w-3.5 h-3.5 fill-[#F4A261] text-[#F4A261]" aria-hidden="true" />
                 {product.rating.toFixed(1)}
@@ -298,6 +378,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <span className={product.inStock ? 'text-emerald-700 font-semibold' : 'text-red-600 font-semibold'}>
                 {product.inStock ? t.product.inStock : t.product.outOfStock}
               </span>
+              {isLowStock && (
+                <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[11px] font-bold">
+                  {t.product.lowStock.replace('{n}', String(product.stockCount))}
+                </span>
+              )}
             </div>
 
             <p className="text-sm text-[#2B1B17]/75 leading-relaxed">{description}</p>

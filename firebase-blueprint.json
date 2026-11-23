@@ -70,6 +70,10 @@
           "type": "boolean",
           "description": "Whether the product is currently available."
         },
+        "stockCount": {
+          "type": "number",
+          "description": "Optional available units/packs count in store inventory."
+        },
         "rating": {
           "type": "number",
           "description": "Average customer rating (0 to 5)."
@@ -430,6 +434,92 @@
         }
       },
       "required": ["id", "nameEn", "nameSw", "updatedAt"]
+    },
+    "OrderTracking": {
+      "title": "OrderTracking",
+      "description": "Zero-PII order status lookup record keyed by orderCode and secured by phone verification hash.",
+      "type": "object",
+      "properties": {
+        "orderCode": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9\\-]+$",
+          "description": "Order code identifier (e.g. SHK-1049)."
+        },
+        "verifyHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 digest of orderCode and last 6 digits of customer phone."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "packed", "dispatched"],
+          "description": "Current fulfillment status."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["retail", "wholesale", "export"],
+          "description": "Order classification."
+        },
+        "deliveryMethod": {
+          "type": "string",
+          "enum": ["dar_delivery", "upcountry_bus", "international_dhl", "store_pickup"],
+          "description": "Delivery channel."
+        },
+        "itemCount": {
+          "type": "number",
+          "description": "Number of line items."
+        },
+        "totalTzs": {
+          "type": "number",
+          "description": "Total amount in TZS."
+        },
+        "currency": {
+          "type": "string",
+          "enum": ["TZS", "USD"],
+          "description": "Order display currency."
+        },
+        "totalInOrderCurrency": {
+          "type": "number",
+          "description": "Total in order currency."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp."
+        },
+        "packedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server packed timestamp."
+        },
+        "dispatchedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server dispatched timestamp."
+        }
+      },
+      "required": [
+        "orderCode",
+        "verifyHash",
+        "status",
+        "type",
+        "deliveryMethod",
+        "itemCount",
+        "totalTzs",
+        "currency",
+        "totalInOrderCurrency",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -456,6 +546,10 @@
     "/orders/{orderId}/items/{itemId}": {
       "schema": { "$ref": "#/entities/OrderItem" },
       "description": "Line items subcollection for each order, synchronized via Master Gate."
+    },
+    "/orderTracking/{trackingId}": {
+      "schema": { "$ref": "#/entities/OrderTracking" },
+      "description": "Zero-PII single-document order status tracking keyed by orderCode."
     }
   }
 }

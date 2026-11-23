@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Filter,
   Gift,
+  Heart,
   Instagram,
   LogIn,
   LogOut,
@@ -31,7 +32,6 @@ import { CategoryId, Product, SizeOption } from '../../types';
 import {
   calculateLinePricing,
   formatPrice,
-  formatRawAmount,
   FREE_DAR_DELIVERY_THRESHOLD_TZS,
   getDisplayProductName,
   PHONE_DISPLAY,
@@ -41,7 +41,9 @@ import {
   WHATSAPP_NUMBER,
 } from '../../utils/pricing';
 import { ProductArtwork } from '../common/ProductArtwork';
+import { PWAInstallButton } from '../common/PWAComponents';
 import { CheckoutFlow } from '../storefront/CheckoutFlow';
+import { OrderTrackerModal } from '../storefront/OrderTrackerModal';
 import { ProductCard } from '../storefront/ProductCard';
 import { ProductDetailModal } from '../storefront/ProductDetailModal';
 
@@ -52,9 +54,9 @@ export const DesktopStorefront: React.FC = () => {
   const {
     products,
     categories: storeCategories,
-    orders,
     cart,
     cartSummary,
+    wishlist,
     appliedCoupon,
     language,
     currency,
@@ -63,10 +65,12 @@ export const DesktopStorefront: React.FC = () => {
     signInWithGoogle,
     signOutUser,
     getCategoryLabel,
+    isInWishlist,
     setLanguage,
     setCurrency,
     setVacuumPacked,
     setAdminMode,
+    addToCart,
     addBundleToCart,
     updateCartItemQuantity,
     removeFromCart,
@@ -78,6 +82,7 @@ export const DesktopStorefront: React.FC = () => {
   const [priceRange, setPriceRange] = useState<PriceRangeFilter>('all');
   const [defaultWeight, setDefaultWeight] = useState<SizeOption>('250g');
   const [inStockOnly, setInStockOnly] = useState(false);
+  const [savedOnly, setSavedOnly] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('featured');
 
   const [detailTarget, setDetailTarget] = useState<{
@@ -87,6 +92,28 @@ export const DesktopStorefront: React.FC = () => {
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [myOrdersOpen, setMyOrdersOpen] = useState(false);
+  const deepLinkHandledRef = useRef(false);
+
+  useEffect(() => {
+    if (deepLinkHandledRef.current || products.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const prodId = params.get('product');
+    if (prodId) {
+      const matched = products.find((p) => p.id === prodId);
+      if (matched) {
+        setDetailTarget({ product: matched, size: '250g' });
+        deepLinkHandledRef.current = true;
+      }
+    }
+  }, [products]);
+
+  const crossSellProducts = useMemo(
+    () =>
+      products
+        .filter((p) => p.inStock && !cart.some((c) => c.productId === p.id))
+        .slice(0, 2),
+    [products, cart]
+  );
 
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -94,6 +121,7 @@ export const DesktopStorefront: React.FC = () => {
     const list = products.filter((p) => {
       if (selectedCategory !== 'all' && p.category !== selectedCategory) return false;
       if (inStockOnly && !p.inStock) return false;
+      if (savedOnly && !isInWishlist(p.id)) return false;
 
       if (q) {
         const catLabel = getCategoryLabel(p.category).toLowerCase();
@@ -138,6 +166,8 @@ export const DesktopStorefront: React.FC = () => {
     searchQuery,
     selectedCategory,
     inStockOnly,
+    savedOnly,
+    isInWishlist,
     priceRange,
     defaultWeight,
     sortBy,
@@ -162,6 +192,7 @@ export const DesktopStorefront: React.FC = () => {
     setPriceRange('all');
     setDefaultWeight('250g');
     setInStockOnly(false);
+    setSavedOnly(false);
     setSortBy('featured');
   };
 
@@ -294,26 +325,27 @@ export const DesktopStorefront: React.FC = () => {
               ))}
             </div>
 
+            <PWAInstallButton variant="header" />
+
+            <button
+              type="button"
+              onClick={() => setMyOrdersOpen(true)}
+              className="px-2.5 py-1 rounded-lg bg-white/12 hover:bg-white/20 text-[#FAF7F2] text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+            >
+              <ClipboardList className="w-3 h-3 text-[#F4A261]" />
+              <span>{t.cloudAuth.myOrders}</span>
+            </button>
+
             {user ? (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMyOrdersOpen(true)}
-                  className="px-2.5 py-1 rounded-lg bg-white/12 hover:bg-white/20 text-[#FAF7F2] text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
-                >
-                  <ClipboardList className="w-3 h-3 text-[#F4A261]" />
-                  <span>{t.cloudAuth.myOrders}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void signOutUser()}
-                  title={user.email || ''}
-                  className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[#FAF7F2]/85 text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
-                >
-                  <LogOut className="w-3 h-3" />
-                  <span>{t.cloudAuth.signOut}</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => void signOutUser()}
+                title={user.email || ''}
+                className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[#FAF7F2]/85 text-[11px] font-semibold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+              >
+                <LogOut className="w-3 h-3" />
+                <span>{t.cloudAuth.signOut}</span>
+              </button>
             ) : (
               <button
                 type="button"
@@ -695,18 +727,42 @@ export const DesktopStorefront: React.FC = () => {
                 ))}
               </div>
 
-              {/* In Stock Only Toggle */}
-              <label className="flex items-center justify-between pt-3 border-t border-[#2B1B17]/8 cursor-pointer">
-                <span className="text-xs font-semibold text-[#2B1B17]">
-                  {t.catalog.inStockOnly}
-                </span>
-                <input
-                  type="checkbox"
-                  checked={inStockOnly}
-                  onChange={(e) => setInStockOnly(e.target.checked)}
-                  className="w-4 h-4 accent-[#D95D39]"
-                />
-              </label>
+              {/* In Stock & Saved Favorites Toggles */}
+              <div className="space-y-3 pt-3 border-t border-[#2B1B17]/8">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-xs font-semibold text-[#2B1B17]">
+                    {t.catalog.inStockOnly}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={inStockOnly}
+                    onChange={(e) => setInStockOnly(e.target.checked)}
+                    className="w-4 h-4 accent-[#D95D39]"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-xs font-semibold text-[#2B1B17] inline-flex items-center gap-1.5">
+                    <Heart
+                      className={`w-3.5 h-3.5 ${
+                        wishlist.length > 0 ? 'fill-[#D95D39] text-[#D95D39]' : 'text-[#2B1B17]/50'
+                      }`}
+                    />
+                    <span>{t.catalog.savedOnly}</span>
+                    {wishlist.length > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-md bg-[#FAF7F2] border border-[#2B1B17]/12 text-[10px] font-bold tabular-nums">
+                        {wishlist.length}
+                      </span>
+                    )}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={savedOnly}
+                    onChange={(e) => setSavedOnly(e.target.checked)}
+                    className="w-4 h-4 accent-[#D95D39]"
+                  />
+                </label>
+              </div>
             </aside>
 
             {/* Product Grid */}
@@ -1076,6 +1132,56 @@ export const DesktopStorefront: React.FC = () => {
                       <div className="text-[#2B1B17]/60 mt-0.5">{t.cart.vacuumHint}</div>
                     </div>
                   </label>
+
+                  {crossSellProducts.length > 0 && (
+                    <div className="bg-white rounded-2xl p-3 border border-[#2B1B17]/10 space-y-2">
+                      <div className="text-xs font-bold text-[#2B1B17]">
+                        {t.cart.crossSellTitle}
+                      </div>
+                      <div className="space-y-2">
+                        {crossSellProducts.map((prod) => {
+                          const prodName = getDisplayProductName(prod, language);
+                          const pricing = calculateLinePricing(
+                            prod.basePrice250g,
+                            '250g',
+                            1,
+                            prod.wholesaleDiscount
+                          );
+                          return (
+                            <div
+                              key={prod.id}
+                              className="flex items-center gap-2.5 p-2 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/8"
+                            >
+                              <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0">
+                                <ProductArtwork
+                                  product={prod}
+                                  language={language}
+                                  compact
+                                  className="w-full h-full"
+                                />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-bold text-[#2B1B17] truncate">
+                                  {prodName}
+                                </div>
+                                <div className="text-[11px] font-semibold text-[#D95D39] tabular-nums">
+                                  {formatPrice(pricing.unitFinalTzs, currency)}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => addToCart(prod.id, '250g', 1)}
+                                className="min-h-[32px] px-2.5 rounded-lg bg-[#2B1B17] hover:bg-[#3F2923] text-white text-[11px] font-semibold inline-flex items-center gap-1 shrink-0 active:scale-95"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>{t.cart.quickAdd}</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -1198,62 +1304,8 @@ export const DesktopStorefront: React.FC = () => {
         </div>
       )}
 
-      {/* Customer Cloud Orders Tracking Modal */}
-      {myOrdersOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-xs"
-          role="dialog"
-          aria-modal="true"
-          aria-label={t.cloudAuth.myOrders}
-        >
-          <div className="absolute inset-0" onClick={() => setMyOrdersOpen(false)} />
-          <div className="relative z-10 bg-[#FAF7F2] rounded-3xl max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden shadow-2xl animate-modal-in">
-            <div className="px-6 py-4 bg-white border-b border-[#2B1B17]/10 flex items-center justify-between shrink-0">
-              <h2 className="font-display font-bold text-lg text-[#2B1B17]">
-                {t.cloudAuth.myOrders}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setMyOrdersOpen(false)}
-                aria-label="Close my orders"
-                className="w-9 h-9 rounded-full hover:bg-[#FAF7F2] flex items-center justify-center"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="overflow-y-auto p-5 space-y-3">
-              {orders.filter((o) => o.isCloudSynced).length === 0 ? (
-                <div className="bg-white rounded-2xl p-8 text-center border border-[#2B1B17]/10 text-xs text-[#2B1B17]/70">
-                  {t.cloudAuth.myOrdersEmpty}
-                </div>
-              ) : (
-                orders
-                  .filter((o) => o.isCloudSynced)
-                  .map((order) => (
-                    <div
-                      key={order.id}
-                      className="bg-white rounded-2xl p-4 border border-[#2B1B17]/10 space-y-2 text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-[#2B1B17]">#{order.id}</span>
-                        <span className="px-2.5 py-0.5 rounded-md bg-[#FAF7F2] border border-[#2B1B17]/15 font-bold text-[#D95D39]">
-                          {t.admin.orders.statuses[order.status]}
-                        </span>
-                      </div>
-                      <div className="text-[#2B1B17]/75">{order.itemsSummary}</div>
-                      <div className="flex items-center justify-between pt-1 border-t border-[#2B1B17]/8">
-                        <span className="text-[#2B1B17]/60">{order.location}</span>
-                        <span className="font-display font-bold text-[#D95D39] tabular-nums">
-                          {formatRawAmount(order.totalInOrderCurrency, order.currency)}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Unified Guest & Cloud Order Tracker Modal */}
+      <OrderTrackerModal open={myOrdersOpen} onClose={() => setMyOrdersOpen(false)} />
     </div>
   );
 };

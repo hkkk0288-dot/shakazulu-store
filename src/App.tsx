@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AdminView } from './components/admin/AdminView';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { OfflineIndicator } from './components/common/PWAComponents';
 import { DesktopStorefront } from './components/desktop/DesktopStorefront';
 import { MobileStorefront } from './components/mobile/MobileStorefront';
 import { StoreProvider, useStore } from './context/StoreContext';
@@ -31,6 +32,8 @@ const AppShell: React.FC = () => {
       ) : (
         <DesktopStorefront />
       )}
+
+      <OfflineIndicator />
 
       {/* Global Toast */}
       {toastMessage && (

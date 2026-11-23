@@ -57,7 +57,7 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'nameEn', 'nameSw', 'descriptionEn', 'descriptionSw', 'category',
-          'basePrice250g', 'wholesaleDiscount', 'inStock', 'rating', 'reviewCount',
+          'basePrice250g', 'wholesaleDiscount', 'inStock', 'stockCount', 'rating', 'reviewCount',
           'badge', 'emoji', 'gradientFrom', 'gradientTo', 'originEn', 'originSw',
           'image', 'createdAt', 'updatedAt'
         ]) &&
@@ -69,6 +69,7 @@ service cloud.firestore {
         data.basePrice250g is number && data.basePrice250g > 0 && data.basePrice250g <= 10000000 &&
         data.wholesaleDiscount is number && data.wholesaleDiscount >= 0 && data.wholesaleDiscount <= 40 &&
         data.inStock is bool &&
+        (!('stockCount' in data) || (data.stockCount is number && data.stockCount >= 0 && data.stockCount <= 100000)) &&
         data.rating is number && data.rating >= 0 && data.rating <= 5 &&
         data.reviewCount is number && data.reviewCount >= 0 && data.reviewCount <= 1000000 &&
         data.badge in ['best_seller', 'new', 'none'] &&
@@ -166,6 +167,31 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidOrderTracking(data) {
+      return data.keys().hasAll([
+          'orderCode', 'verifyHash', 'status', 'type', 'deliveryMethod',
+          'itemCount', 'totalTzs', 'currency', 'totalInOrderCurrency', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'orderCode', 'verifyHash', 'status', 'type', 'deliveryMethod',
+          'itemCount', 'totalTzs', 'currency', 'totalInOrderCurrency',
+          'createdAt', 'updatedAt', 'packedAt', 'dispatchedAt'
+        ]) &&
+        data.orderCode is string && data.orderCode.size() >= 3 && data.orderCode.size() <= 32 && data.orderCode.matches('^[A-Z0-9\\-]+$') &&
+        data.verifyHash is string && data.verifyHash.size() == 64 && data.verifyHash.matches('^[a-f0-9]{64}$') &&
+        data.status in ['pending', 'packed', 'dispatched'] &&
+        data.type in ['retail', 'wholesale', 'export'] &&
+        data.deliveryMethod in ['dar_delivery', 'upcountry_bus', 'international_dhl', 'store_pickup'] &&
+        data.itemCount is number && data.itemCount >= 1 && data.itemCount <= 100 &&
+        data.totalTzs is number && data.totalTzs >= 0 && data.totalTzs <= 100000000 &&
+        data.currency in ['TZS', 'USD'] &&
+        data.totalInOrderCurrency is number && data.totalInOrderCurrency >= 0 && data.totalInOrderCurrency <= 100000000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        (!('packedAt' in data) || data.packedAt is timestamp) &&
+        (!('dispatchedAt' in data) || data.dispatchedAt is timestamp);
+    }
+
     // --- Collection Rules ---
 
     // Admins collection
@@ -197,7 +223,7 @@ service cloud.firestore {
         incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly([
           'nameEn', 'nameSw', 'descriptionEn', 'descriptionSw', 'category',
-          'basePrice250g', 'wholesaleDiscount', 'inStock', 'rating', 'reviewCount',
+          'basePrice250g', 'wholesaleDiscount', 'inStock', 'stockCount', 'rating', 'reviewCount',
           'badge', 'emoji', 'gradientFrom', 'gradientTo', 'originEn', 'originSw',
           'image', 'updatedAt'
         ]);
@@ -243,6 +269,24 @@ service cloud.firestore {
           getAfter(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid;
         allow update, delete: if isAdmin() && isValidId(orderId) && isValidId(itemId);
       }
+    }
+
+    // Zero-PII single-document order tracking lookup (no list access)
+    match /orderTracking/{trackingId} {
+      allow get: if isValidId(trackingId);
+      allow list: if isAdmin();
+      allow create: if isVerifiedUser() && isValidId(trackingId) && isValidOrderTracking(incoming()) &&
+        incoming().orderCode == trackingId &&
+        incoming().status == 'pending' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(trackingId) && isValidOrderTracking(incoming()) &&
+        incoming().orderCode == existing().orderCode &&
+        incoming().verifyHash == existing().verifyHash &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'packedAt', 'dispatchedAt']);
+      allow delete: if isAdmin() && isValidId(trackingId);
     }
   }
 }

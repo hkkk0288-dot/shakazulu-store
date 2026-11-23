@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShoppingBag, Star, Tag } from 'lucide-react';
+import { Heart, ShoppingBag, Star, Tag } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { Product, SizeOption } from '../../types';
 import {
@@ -23,8 +23,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   compact = false,
   onOpenDetail,
 }) => {
-  const { language, currency, t, getCategoryLabel, addToCart } = useStore();
+  const { language, currency, t, getCategoryLabel, addToCart, isInWishlist, toggleWishlist } = useStore();
   const [selectedSize, setSelectedSize] = useState<SizeOption>(defaultSize);
+  const favorited = isInWishlist(product.id);
+  const isLowStock =
+    product.inStock &&
+    typeof product.stockCount === 'number' &&
+    product.stockCount > 0 &&
+    product.stockCount <= 5;
 
   // Sync defaultSize prop when weight filter changes
   React.useEffect(() => {
@@ -54,39 +60,60 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       }`}
     >
       {/* Visual Tile */}
-      <button
-        type="button"
-        onClick={() => onOpenDetail(product, selectedSize)}
-        className={`relative w-full text-left overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D95D39] ${
-          compact ? 'aspect-[4/3]' : 'aspect-[4/3]'
-        }`}
-        aria-label={`${name} - ${t.product.quickView}`}
-      >
-        <ProductArtwork product={product} language={language} compact={compact} className="w-full h-full" />
+      <div className="relative w-full">
+        <button
+          type="button"
+          onClick={() => onOpenDetail(product, selectedSize)}
+          className="relative w-full text-left overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D95D39] aspect-[4/3] block"
+          aria-label={`${name} - ${t.product.quickView}`}
+        >
+          <ProductArtwork product={product} language={language} compact={compact} className="w-full h-full" />
 
-        {/* Single crisp status/highlight badge */}
-        {badgeLabel && (
-          <span
-            className={`absolute top-2.5 left-2.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold tracking-tight shadow-sm whitespace-nowrap ${
-              !product.inStock
-                ? 'bg-[#2B1B17]/85 text-white'
-                : product.badge === 'new'
-                  ? 'bg-[#2B1B17] text-[#F4A261]'
-                  : 'bg-white/95 text-[#2B1B17]'
+          {/* Single crisp status/highlight badge */}
+          {badgeLabel && (
+            <span
+              className={`absolute top-2.5 left-2.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold tracking-tight shadow-sm whitespace-nowrap ${
+                !product.inStock
+                  ? 'bg-[#2B1B17]/85 text-white'
+                  : product.badge === 'new'
+                    ? 'bg-[#2B1B17] text-[#F4A261]'
+                    : 'bg-white/95 text-[#2B1B17]'
+              }`}
+            >
+              {badgeLabel}
+            </span>
+          )}
+
+          {/* Low stock urgency badge */}
+          {isLowStock && (
+            <span className="absolute bottom-2.5 right-2.5 px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-bold shadow-sm whitespace-nowrap">
+              {t.product.lowStock.replace('{n}', String(product.stockCount))}
+            </span>
+          )}
+
+          {/* Wholesale Price badge when 5kg is selected */}
+          {pricing.isWholesaleApplied && product.inStock && (
+            <span className="absolute bottom-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F4A261] text-[#2B1B17] text-[10px] font-bold shadow-sm whitespace-nowrap">
+              <Tag className="w-3 h-3" aria-hidden="true" />
+              {t.product.wholesaleBadge} (-{pricing.discountPercent}%)
+            </span>
+          )}
+        </button>
+
+        {/* Wishlist Heart Button */}
+        <button
+          type="button"
+          onClick={() => toggleWishlist(product.id)}
+          aria-label={favorited ? t.product.favoriteRemove : t.product.favoriteAdd}
+          className="absolute top-2.5 right-2.5 z-10 w-8 h-8 rounded-full bg-white/90 hover:bg-white shadow-sm flex items-center justify-center active:scale-90 transition-transform"
+        >
+          <Heart
+            className={`w-4 h-4 transition-colors ${
+              favorited ? 'fill-[#D95D39] text-[#D95D39]' : 'text-[#2B1B17]/65'
             }`}
-          >
-            {badgeLabel}
-          </span>
-        )}
-
-        {/* Wholesale Price badge when 5kg is selected */}
-        {pricing.isWholesaleApplied && product.inStock && (
-          <span className="absolute bottom-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F4A261] text-[#2B1B17] text-[10px] font-bold shadow-sm whitespace-nowrap">
-            <Tag className="w-3 h-3" aria-hidden="true" />
-            {t.product.wholesaleBadge} (-{pricing.discountPercent}%)
-          </span>
-        )}
-      </button>
+          />
+        </button>
+      </div>
 
       {/* Card Body */}
       <div className={`${compact ? 'p-3' : 'p-4'} flex-1 flex flex-col justify-between gap-2.5`}>

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowLeft,
   BarChart3,
   Box,
@@ -7,6 +8,7 @@ import {
   ClipboardCopy,
   Clock,
   Cloud,
+  Download,
   FolderPlus,
   Globe,
   KeyRound,
@@ -20,6 +22,7 @@ import {
   ShoppingBag,
   Tag,
   Trash2,
+  TrendingUp,
   Truck,
   X,
 } from 'lucide-react';
@@ -32,6 +35,7 @@ import {
   getDisplayProductName,
   USD_EXCHANGE_RATE,
 } from '../../utils/pricing';
+import { downloadCsv } from '../../utils/tracking';
 import { ProductArtwork } from '../common/ProductArtwork';
 import { AddProductModal } from './AddProductModal';
 
@@ -125,6 +129,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   // Track inline draft edits & validation errors per product
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [discountDrafts, setDiscountDrafts] = useState<Record<string, string>>({});
+  const [stockDrafts, setStockDrafts] = useState<Record<string, string>>({});
   const [productErrors, setProductErrors] = useState<Record<string, string>>({});
 
   // KPIs derived directly from live orders list
@@ -147,6 +152,50 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
     return { salesTzs, wholesaleCount, exportCount, pendingCount };
   }, [orders]);
+
+  // Insights for Admin Reports
+  const insights = useMemo(() => {
+    const channelTotals: Record<OrderType, number> = {
+      retail: 0,
+      wholesale: 0,
+      export: 0,
+    };
+    const productStats = new Map<
+      string,
+      { productId: string; nameEn: string; nameSw: string; qty: number; revenueTzs: number }
+    >();
+
+    orders.forEach((order) => {
+      const orderTzs =
+        order.currency === 'USD'
+          ? Math.round(order.totalInOrderCurrency * USD_EXCHANGE_RATE)
+          : order.totalTzs;
+      channelTotals[order.type] += orderTzs;
+
+      order.items.forEach((it) => {
+        const prev = productStats.get(it.productId) || {
+          productId: it.productId,
+          nameEn: it.nameEn,
+          nameSw: it.nameSw,
+          qty: 0,
+          revenueTzs: 0,
+        };
+        prev.qty += it.quantity;
+        prev.revenueTzs += it.lineTotalTzs;
+        productStats.set(it.productId, prev);
+      });
+    });
+
+    const topProducts = Array.from(productStats.values())
+      .sort((a, b) => b.revenueTzs - a.revenueTzs || b.qty - a.qty)
+      .slice(0, 4);
+
+    const lowStockProducts = products.filter(
+      (p) => !p.inStock || (typeof p.stockCount === 'number' && p.stockCount <= 5)
+    );
+
+    return { channelTotals, topProducts, lowStockProducts };
+  }, [orders, products]);
 
   const filteredProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
@@ -210,6 +259,78 @@ export const AdminView: React.FC<AdminViewProps> = ({
     }
   };
 
+  const handleStockCommit = (product: Product, rawValue: string) => {
+    const trimmed = rawValue.trim();
+    if (!trimmed) return;
+    const parsed = Math.max(0, Math.min(100000, Math.round(Number(trimmed))));
+    if (!Number.isFinite(parsed)) return;
+    if (parsed !== product.stockCount) {
+      updateProduct(product.id, {
+        stockCount: parsed,
+        inStock: parsed === 0 ? false : product.inStock,
+      });
+    }
+  };
+
+  const handleExportOrdersCsv = () => {
+    const headers = [
+      'Order Code',
+      'Date',
+      'Customer',
+      'Phone',
+      'Channel',
+      'Delivery',
+      'Location',
+      'Payment',
+      'Status',
+      'Currency',
+      'Total',
+      'Items',
+    ];
+    const rows = orders.map((o) => [
+      o.orderCode || o.id,
+      o.createdAt,
+      o.customerName,
+      o.customerPhone,
+      o.type,
+      o.deliveryMethod,
+      o.location,
+      o.paymentMethod,
+      o.status,
+      o.currency,
+      o.totalInOrderCurrency,
+      o.itemsSummary ||
+        o.items.map((it) => `${it.nameEn} (${it.size}) x${it.quantity}`).join('; '),
+    ]);
+    downloadCsv(`shakazulu-orders-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+    showToast(t.admin.reports.exportedToast);
+  };
+
+  const handleExportProductsCsv = () => {
+    const headers = [
+      'ID',
+      'Name (EN)',
+      'Name (SW)',
+      'Category',
+      '250g Price (TZS)',
+      'Wholesale Discount %',
+      'Stock Qty',
+      'In Stock',
+    ];
+    const rows = products.map((p) => [
+      p.id,
+      p.nameEn,
+      p.nameSw,
+      p.category,
+      p.basePrice250g,
+      p.wholesaleDiscount,
+      p.stockCount ?? '',
+      p.inStock ? 'Yes' : 'No',
+    ]);
+    downloadCsv(`shakazulu-inventory-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+    showToast(t.admin.reports.exportedToast);
+  };
+
   const copyOrderSummary = async (order: Order) => {
     const itemsText = order.items
       .map(
@@ -221,13 +342,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
       )
       .join('\n');
     const summary = [
-      `Order #${order.id} [${t.admin.orders.types[order.type]}]`,
+      `Order #${order.orderCode || order.id} [${t.admin.orders.types[order.type]}]`,
       `Customer: ${order.customerName} (${order.customerPhone})`,
       `Location: ${order.location}`,
       `Payment: ${t.checkout.paymentOptions[order.paymentMethod]}`,
       `Vacuum Packed: ${order.vacuumPacked ? 'Yes' : 'No'}`,
       `Status: ${t.admin.orders.statuses[order.status]}`,
-      `Items:\n${itemsText}`,
+      `Items:\n${itemsText || order.itemsSummary || '-'}`,
       `Total: ${formatRawAmount(order.totalInOrderCurrency, order.currency)}`,
     ].join('\n');
 
@@ -413,7 +534,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono font-bold text-xs text-[#2B1B17]">#{order.id}</span>
+                  <span className="font-mono font-bold text-xs text-[#2B1B17]">
+                    #{order.orderCode || order.id}
+                  </span>
                   <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${typeBadgeClass(order.type)}`}>
                     {t.admin.orders.types[order.type]}
                   </span>
@@ -436,6 +559,124 @@ export const AdminView: React.FC<AdminViewProps> = ({
               </div>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Sales & Inventory Insights + CSV Exports */}
+      <div className="bg-white rounded-2xl border border-[#2B1B17]/10 p-4 md:p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <h2 className="font-display font-bold text-base text-[#2B1B17] inline-flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-[#D95D39]" />
+            <span>{t.admin.reports.title}</span>
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleExportOrdersCsv}
+              className="min-h-[36px] px-3 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/15 text-[#2B1B17] text-xs font-semibold inline-flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5 text-[#D95D39]" />
+              <span>{t.admin.reports.exportOrdersCsv}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportProductsCsv}
+              className="min-h-[36px] px-3 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/15 text-[#2B1B17] text-xs font-semibold inline-flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5 text-[#D95D39]" />
+              <span>{t.admin.reports.exportProductsCsv}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Revenue by Channel */}
+          <div className="bg-[#FAF7F2] rounded-xl p-3.5 space-y-2.5 border border-[#2B1B17]/8">
+            <h3 className="text-xs font-bold text-[#2B1B17]">{t.admin.reports.byType}</h3>
+            {(['retail', 'wholesale', 'export'] as const).map((channel) => {
+              const amount = insights.channelTotals[channel];
+              const pct = kpis.salesTzs > 0 ? Math.round((amount / kpis.salesTzs) * 100) : 0;
+              return (
+                <div key={channel} className="space-y-1 text-[11px]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-[#2B1B17]">
+                      {t.admin.orders.types[channel]} ({pct}%)
+                    </span>
+                    <span className="font-mono font-bold text-[#D95D39] tabular-nums">
+                      {formatPrice(amount, currency)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-white overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[#D95D39]"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Top Ordered Products */}
+          <div className="bg-[#FAF7F2] rounded-xl p-3.5 space-y-2 border border-[#2B1B17]/8">
+            <h3 className="text-xs font-bold text-[#2B1B17]">{t.admin.reports.topProducts}</h3>
+            {insights.topProducts.length === 0 ? (
+              <p className="text-[11px] text-[#2B1B17]/60">{t.admin.orders.emptyBody}</p>
+            ) : (
+              <div className="space-y-2">
+                {insights.topProducts.map((item) => (
+                  <div
+                    key={item.productId}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
+                    <span className="font-semibold text-[#2B1B17] truncate">
+                      {language === 'sw' ? item.nameSw : item.nameEn}
+                    </span>
+                    <span className="font-mono font-bold text-[#2B1B17]/75 tabular-nums shrink-0">
+                      ×{item.qty}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Low Stock Alerts */}
+          <div className="bg-[#FAF7F2] rounded-xl p-3.5 space-y-2 border border-[#2B1B17]/8">
+            <h3 className="text-xs font-bold text-[#2B1B17] inline-flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+              <span>{t.admin.reports.lowStockTitle}</span>
+            </h3>
+            {insights.lowStockProducts.length === 0 ? (
+              <p className="text-[11px] text-emerald-700 font-semibold">
+                {t.admin.reports.allStockHealthy}
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                {insights.lowStockProducts.map((prod) => (
+                  <button
+                    key={prod.id}
+                    type="button"
+                    onClick={() => setActiveTab('products')}
+                    className="w-full flex items-center justify-between gap-2 text-left text-[11px] px-2 py-1 rounded-lg bg-white hover:bg-amber-50 border border-[#2B1B17]/8"
+                  >
+                    <span className="font-semibold text-[#2B1B17] truncate">
+                      {getDisplayProductName(prod, language)}
+                    </span>
+                    <span
+                      className={`font-bold shrink-0 ${
+                        !prod.inStock ? 'text-red-600' : 'text-amber-700'
+                      }`}
+                    >
+                      {!prod.inStock
+                        ? t.product.outOfStock
+                        : `${prod.stockCount ?? 0} ${t.admin.products.stockQty}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -748,7 +989,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-[10px] font-semibold text-[#2B1B17]/65 mb-1">
                       {t.admin.products.basePrice}
@@ -781,7 +1022,31 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       className="w-full min-h-[40px] px-2.5 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/15 font-mono text-xs tabular-nums"
                     />
                   </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-[#2B1B17]/65 mb-1">
+                      {t.admin.products.stockQty}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100000}
+                      value={stockDrafts[prod.id] ?? (prod.stockCount !== undefined ? String(prod.stockCount) : '')}
+                      onChange={(e) =>
+                        setStockDrafts((prev) => ({ ...prev, [prod.id]: e.target.value }))
+                      }
+                      onBlur={(e) => handleStockCommit(prod, e.target.value)}
+                      placeholder="∞"
+                      className="w-full min-h-[40px] px-2.5 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/15 font-mono text-xs tabular-nums"
+                    />
+                  </div>
                 </div>
+
+                {typeof prod.stockCount === 'number' && prod.stockCount <= 5 && prod.inStock && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
+                    <AlertTriangle className="w-3 h-3" />
+                    {t.admin.products.lowStockBadge} ({prod.stockCount})
+                  </span>
+                )}
 
                 {err && <p className="text-[11px] font-semibold text-red-600">{err}</p>}
 
@@ -845,6 +1110,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 <th className="py-3 px-4">Product</th>
                 <th className="py-3 px-3">{t.admin.products.basePrice}</th>
                 <th className="py-3 px-3">{t.admin.products.wholesalePct}</th>
+                <th className="py-3 px-3">{t.admin.products.stockQty}</th>
                 <th className="py-3 px-3">{t.admin.products.livePreview}</th>
                 <th className="py-3 px-4 text-right">{t.admin.products.stockStatus}</th>
               </tr>
@@ -924,6 +1190,36 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         onBlur={(e) => handleDiscountCommit(prod, e.target.value)}
                         className="w-20 h-9 px-2.5 rounded-lg bg-[#FAF7F2] border border-[#2B1B17]/15 font-mono text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[#D95D39]"
                       />
+                    </td>
+
+                    <td className="py-3 px-3">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100000}
+                          value={
+                            stockDrafts[prod.id] ??
+                            (prod.stockCount !== undefined ? String(prod.stockCount) : '')
+                          }
+                          onChange={(e) =>
+                            setStockDrafts((prev) => ({ ...prev, [prod.id]: e.target.value }))
+                          }
+                          onBlur={(e) => handleStockCommit(prod, e.target.value)}
+                          placeholder="∞"
+                          className="w-16 h-9 px-2 rounded-lg bg-[#FAF7F2] border border-[#2B1B17]/15 font-mono text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[#D95D39]"
+                        />
+                        {typeof prod.stockCount === 'number' &&
+                          prod.stockCount <= 5 &&
+                          prod.inStock && (
+                            <span
+                              title={t.admin.products.lowStockBadge}
+                              className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold whitespace-nowrap"
+                            >
+                              {t.admin.products.lowStockBadge}
+                            </span>
+                          )}
+                      </div>
                     </td>
 
                     <td className="py-3 px-3 tabular-nums text-[11px] text-[#2B1B17]/75">
@@ -1061,7 +1357,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   >
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono font-bold text-sm text-[#2B1B17] group-hover:text-[#D95D39]">
-                        #{order.id}
+                        #{order.orderCode || order.id}
                       </span>
                       <span
                         className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${typeBadgeClass(
@@ -1248,7 +1544,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
         <div className="px-5 py-4 border-b border-[#2B1B17]/10 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
             <span className="font-mono font-bold text-base text-[#2B1B17]">
-              #{activeOrderDetail.id}
+              #{activeOrderDetail.orderCode || activeOrderDetail.id}
             </span>
             <span
               className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${typeBadgeClass(

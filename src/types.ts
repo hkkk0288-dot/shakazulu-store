@@ -23,6 +23,7 @@ export interface Product {
   basePrice250g: number; // TZS
   wholesaleDiscount: number; // 0 - 40 (%)
   inStock: boolean;
+  stockCount?: number;
   rating: number;
   reviewCount: number;
   badge: ProductBadge;
@@ -84,6 +85,7 @@ export interface OrderTimestamp {
 
 export interface Order {
   id: string;
+  orderCode?: string;
   userId?: string;
   customerName: string;
   customerPhone: string;
@@ -148,6 +150,23 @@ export interface CustomerReview {
   rating: number;
   quoteEn: string;
   quoteSw: string;
+}
+
+export interface TrackedOrderResult {
+  orderCode: string;
+  status: OrderStatus;
+  type: OrderType;
+  deliveryMethod: DeliveryMethod;
+  itemCount: number;
+  totalTzs: number;
+  currency: Currency;
+  totalInOrderCurrency: number;
+  createdAt: string;
+  packedAt?: string;
+  dispatchedAt?: string;
+  location?: string;
+  itemsSummary?: string;
+  isLocal?: boolean;
 }
 
 export type MobileTab = 'home' | 'categories' | 'wholesale' | 'cart' | 'more';

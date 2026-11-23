@@ -1,8 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronRight,
+  ClipboardList,
   Gift,
   Grid,
+  Heart,
   Home,
   Instagram,
   LogIn,
@@ -15,12 +17,14 @@ import {
   Search,
   Shield,
   ShoppingBag,
+  Smartphone,
   Star,
   TrendingUp,
   X,
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { COMBO_BUNDLES, CUSTOMER_REVIEWS } from '../../data/seedData';
+import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { CategoryId, MobileTab, Product, SizeOption } from '../../types';
 import {
   calculateLinePricing,
@@ -33,9 +37,14 @@ import {
   WHATSAPP_NUMBER,
 } from '../../utils/pricing';
 import { ProductArtwork } from '../common/ProductArtwork';
+import { PWAInstallButton } from '../common/PWAComponents';
 import { CheckoutFlow } from '../storefront/CheckoutFlow';
+import { OrderTrackerModal } from '../storefront/OrderTrackerModal';
 import { ProductCard } from '../storefront/ProductCard';
 import { ProductDetailModal } from '../storefront/ProductDetailModal';
+import { MobileSplashOnboarding } from './MobileSplashOnboarding';
+
+const MOBILE_SPLASH_STORAGE_KEY = 'shakazulu_mobile_splash_seen_v1';
 
 interface MobileStorefrontProps {
   isScopedFrame?: boolean;
@@ -49,12 +58,14 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
     categories: storeCategories,
     orders,
     cartSummary,
+    wishlist,
     language,
     currency,
     user,
     signInWithGoogle,
     signOutUser,
     getCategoryLabel,
+    isInWishlist,
     setLanguage,
     setCurrency,
     setAdminMode,
@@ -62,20 +73,58 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
     t,
   } = useStore();
 
+  const { isInstallable, isInstalled, isIOS } = usePWAInstall();
+
   const [activeTab, setActiveTab] = useState<MobileTab>('home');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
+  const [savedOnly, setSavedOnly] = useState(false);
+  const [ordersModalOpen, setOrdersModalOpen] = useState(false);
+  const [showSplash, setShowSplash] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const hasDeepLink = new URLSearchParams(window.location.search).has('product');
+      if (hasDeepLink) return false;
+      return window.localStorage.getItem(MOBILE_SPLASH_STORAGE_KEY) !== 'true';
+    } catch {
+      return false;
+    }
+  });
   const [promoIndex, setPromoIndex] = useState(0);
   const [isFilteringSkeleton, setIsFilteringSkeleton] = useState(false);
+
+  const handleFinishSplash = () => {
+    try {
+      window.localStorage.setItem(MOBILE_SPLASH_STORAGE_KEY, 'true');
+    } catch {
+      // Ignore storage errors
+    }
+    setShowSplash(false);
+  };
 
   const [detailTarget, setDetailTarget] = useState<{
     product: Product;
     size: SizeOption;
   } | null>(null);
+  const deepLinkHandledRef = useRef(false);
+
+  useEffect(() => {
+    if (deepLinkHandledRef.current || products.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const prodId = params.get('product');
+    if (prodId) {
+      const matched = products.find((p) => p.id === prodId);
+      if (matched) {
+        setDetailTarget({ product: matched, size: '250g' });
+        deepLinkHandledRef.current = true;
+      }
+    }
+  }, [products]);
 
   const handleCategoryChange = (cat: CategoryId) => {
-    if (cat === selectedCategory) return;
+    if (cat === selectedCategory && !savedOnly) return;
+    setSavedOnly(false);
     setSelectedCategory(cat);
     setIsFilteringSkeleton(true);
     window.setTimeout(() => setIsFilteringSkeleton(false), 160);
@@ -89,6 +138,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return products.filter((p) => {
+      if (savedOnly && !isInWishlist(p.id)) return false;
       if (selectedCategory !== 'all' && p.category !== selectedCategory) return false;
       if (q) {
         const catLabel = getCategoryLabel(p.category).toLowerCase();
@@ -100,7 +150,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
       }
       return true;
     });
-  }, [products, selectedCategory, searchQuery, getCategoryLabel]);
+  }, [products, selectedCategory, savedOnly, isInWishlist, searchQuery, getCategoryLabel]);
 
   const categoryIds: CategoryId[] = useMemo(
     () => ['all', ...storeCategories.map((c) => c.id)],
@@ -291,10 +341,28 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
               </div>
             </div>
 
-            {/* Category Chips */}
+            {/* Category & Saved Favorites Chips */}
             <div className="flex gap-2 overflow-x-auto no-scrollbar py-0.5">
+              {wishlist.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSavedOnly((v) => !v)}
+                  className={`min-h-[40px] px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 transition-all active:scale-95 ${
+                    savedOnly
+                      ? 'bg-[#D95D39] text-white shadow-xs'
+                      : 'bg-white text-[#D95D39] border border-[#D95D39]/25'
+                  }`}
+                >
+                  <Heart
+                    className={`w-3.5 h-3.5 ${savedOnly ? 'fill-white text-white' : 'fill-[#D95D39]'}`}
+                  />
+                  <span>
+                    {t.catalog.savedOnly} ({wishlist.length})
+                  </span>
+                </button>
+              )}
               {categoryIds.map((cat) => {
-                const active = selectedCategory === cat;
+                const active = !savedOnly && selectedCategory === cat;
                 return (
                   <button
                     key={cat}
@@ -313,7 +381,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
             </div>
 
             {/* Best Sellers Horizontal Row */}
-            {!searchQuery && selectedCategory === 'all' && (
+            {!searchQuery && !savedOnly && selectedCategory === 'all' && (
               <section>
                 <div className="flex items-center justify-between mb-2.5">
                   <h2 className="font-display font-bold text-base text-[#2B1B17]">
@@ -474,6 +542,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                     onClick={() => {
                       setSearchQuery('');
                       setSelectedCategory('all');
+                      setSavedOnly(false);
                     }}
                     className="mt-3 min-h-[44px] px-4 rounded-xl bg-[#D95D39] text-white text-xs font-semibold"
                   >
@@ -534,8 +603,26 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
             </h1>
 
             <div className="flex gap-2 overflow-x-auto no-scrollbar py-0.5">
+              {wishlist.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSavedOnly((v) => !v)}
+                  className={`min-h-[40px] px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 transition-all active:scale-95 ${
+                    savedOnly
+                      ? 'bg-[#D95D39] text-white'
+                      : 'bg-white text-[#D95D39] border border-[#D95D39]/25'
+                  }`}
+                >
+                  <Heart
+                    className={`w-3.5 h-3.5 ${savedOnly ? 'fill-white text-white' : 'fill-[#D95D39]'}`}
+                  />
+                  <span>
+                    {t.catalog.savedOnly} ({wishlist.length})
+                  </span>
+                </button>
+              )}
               {categoryIds.map((cat) => {
-                const active = selectedCategory === cat;
+                const active = !savedOnly && selectedCategory === cat;
                 return (
                   <button
                     key={cat}
@@ -561,6 +648,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                   onClick={() => {
                     setSearchQuery('');
                     setSelectedCategory('all');
+                    setSavedOnly(false);
                   }}
                   className="mt-3 min-h-[44px] px-4 rounded-xl bg-[#D95D39] text-white text-xs font-semibold"
                 >
@@ -708,9 +796,32 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                   ))}
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setShowSplash(true)}
+                className="w-full min-h-[42px] px-3.5 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/10 text-[#2B1B17] text-xs font-semibold inline-flex items-center justify-center gap-2 active:scale-95 transition-transform"
+              >
+                <Smartphone className="w-4 h-4 text-[#D95D39]" />
+                <span>{t.splash.replayBtn}</span>
+              </button>
             </div>
 
-            {/* Cloud Account & My Orders */}
+            {/* Installable PWA Card (shown when installable or on iOS Safari) */}
+            {!isInstalled && (isInstallable || isIOS) && (
+              <div className="bg-white rounded-2xl p-4 border border-[#2B1B17]/10 space-y-2.5">
+                <div className="flex items-center gap-2 text-[#D95D39]">
+                  <Smartphone className="w-4 h-4" />
+                  <h2 className="font-display font-bold text-sm text-[#2B1B17]">
+                    {t.pwa.cardTitle}
+                  </h2>
+                </div>
+                <p className="text-xs text-[#2B1B17]/70 leading-relaxed">{t.pwa.cardSubtitle}</p>
+                <PWAInstallButton variant="card" />
+              </div>
+            )}
+
+            {/* Track & My Orders + Cloud Account */}
             <div className="bg-white rounded-2xl p-4 border border-[#2B1B17]/10 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="font-display font-bold text-sm text-[#2B1B17]">
@@ -737,6 +848,15 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                 )}
               </div>
 
+              <button
+                type="button"
+                onClick={() => setOrdersModalOpen(true)}
+                className="w-full min-h-[44px] px-3.5 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/12 text-[#2B1B17] text-xs font-semibold inline-flex items-center justify-center gap-2 active:scale-95 transition-transform"
+              >
+                <ClipboardList className="w-4 h-4 text-[#D95D39]" />
+                <span>{t.ordersTrack.trackThisOrder} / {t.ordersTrack.tabMyOrders}</span>
+              </button>
+
               {user ? (
                 orders.filter((o) => o.isCloudSynced).length === 0 ? (
                   <p className="text-xs text-[#2B1B17]/65">{t.cloudAuth.myOrdersEmpty}</p>
@@ -744,14 +864,16 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                   <div className="space-y-2">
                     {orders
                       .filter((o) => o.isCloudSynced)
-                      .slice(0, 5)
+                      .slice(0, 3)
                       .map((order) => (
                         <div
                           key={order.id}
                           className="p-3 rounded-xl bg-[#FAF7F2] space-y-1 text-xs"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold">#{order.id}</span>
+                            <span className="font-mono font-bold">
+                              #{order.orderCode || order.id}
+                            </span>
                             <span className="font-bold text-[#D95D39]">
                               {t.admin.orders.statuses[order.status]}
                             </span>
@@ -767,7 +889,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                   </div>
                 )
               ) : (
-                <p className="text-xs text-[#2B1B17]/65">{t.cloudAuth.checkoutSignInPrompt}</p>
+                <p className="text-xs text-[#2B1B17]/65">{t.ordersTrack.trackHint}</p>
               )}
             </div>
 
@@ -887,6 +1009,21 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
         isMobileLayout
         isScopedFrame={isScopedFrame}
         onClose={() => setDetailTarget(null)}
+      />
+
+      {/* Unified Guest & Cloud Order Tracker Modal */}
+      <OrderTrackerModal
+        open={ordersModalOpen}
+        isMobileLayout
+        isScopedFrame={isScopedFrame}
+        onClose={() => setOrdersModalOpen(false)}
+      />
+
+      {/* 3-Screen Modern Mobile Splash Onboarding */}
+      <MobileSplashOnboarding
+        open={showSplash}
+        isScopedFrame={isScopedFrame}
+        onFinish={handleFinishSplash}
       />
     </div>
   );

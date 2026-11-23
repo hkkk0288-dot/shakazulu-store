@@ -6,6 +6,7 @@ import {
   Bus,
   Check,
   CheckCircle2,
+  ClipboardList,
   CreditCard,
   MapPin,
   MessageCircle,
@@ -40,6 +41,7 @@ import {
   VACUUM_PACK_FEE_TZS,
 } from '../../utils/pricing';
 import { ProductArtwork } from '../common/ProductArtwork';
+import { OrderTrackerModal } from './OrderTrackerModal';
 
 interface CheckoutFlowProps {
   mode: 'mobile-tab' | 'desktop-modal';
@@ -69,6 +71,7 @@ export const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
     removePromoCode,
     updateCartItemQuantity,
     removeFromCart,
+    addToCart,
     clearCart,
     placeOrder,
     setAdminMode,
@@ -90,6 +93,15 @@ export const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
+  const [trackerOpen, setTrackerOpen] = useState(false);
+
+  const crossSellProducts = useMemo(
+    () =>
+      products
+        .filter((p) => p.inStock && !cart.some((c) => c.productId === p.id))
+        .slice(0, 2),
+    [products, cart]
+  );
 
   const selectedAreaObj = DAR_AREAS.find((a) => a.id === darArea) || DAR_AREAS[0];
 
@@ -127,7 +139,7 @@ export const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
   const whatsAppPreviewUrl = useMemo(() => {
     const targetOrder = completedOrder;
     return buildWhatsAppOrderUrl({
-      orderId: targetOrder?.id,
+      orderId: targetOrder?.orderCode || targetOrder?.id,
       language,
       currency: targetOrder ? targetOrder.currency : currency,
       customerName: targetOrder ? targetOrder.customerName : customerName || 'Customer',
@@ -248,102 +260,139 @@ export const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
 
   // Success Receipt View
   if (completedOrder) {
+    const receiptCode = completedOrder.orderCode || completedOrder.id;
     return (
-      <div className="bg-white rounded-2xl border border-[#2B1B17]/10 p-6 md:p-8 text-center max-w-xl mx-auto my-4 shadow-sm animate-modal-in">
-        <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center mx-auto mb-4">
-          <CheckCircle2 className="w-9 h-9" />
-        </div>
-        <h2 className="font-display text-2xl font-bold text-[#2B1B17]">
-          {t.checkout.successTitle}
-        </h2>
-        <p className="text-sm text-[#2B1B17]/70 mt-2 leading-relaxed">
-          {t.checkout.successBody}
-        </p>
+      <>
+        <div className="bg-white rounded-2xl border border-[#2B1B17]/10 p-6 md:p-8 text-center max-w-xl mx-auto my-4 shadow-sm animate-modal-in">
+          <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle2 className="w-9 h-9" />
+          </div>
+          <h2 className="font-display text-2xl font-bold text-[#2B1B17]">
+            {t.checkout.successTitle}
+          </h2>
+          <p className="text-sm text-[#2B1B17]/70 mt-2 leading-relaxed">
+            {t.checkout.successBody}
+          </p>
 
-        <div className="mt-5 bg-[#FAF7F2] rounded-2xl p-4 text-left space-y-2 border border-[#2B1B17]/8">
-          <div className="flex items-center justify-between text-[10px] font-bold text-[#2B1B17]/55 uppercase tracking-wider pb-1 border-b border-[#2B1B17]/10">
-            <span>{t.brandName} · Dar es Salaam</span>
-            <span>{t.conversion.receiptTitle}</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-[#2B1B17]/60">{t.checkout.orderNumber}</span>
-            <span className="font-mono font-bold text-[#2B1B17]">#{completedOrder.id}</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-[#2B1B17]/60">{t.checkout.fullName}</span>
-            <span className="font-semibold text-[#2B1B17]">{completedOrder.customerName}</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-[#2B1B17]/60">{t.checkout.deliveryMethodTitle}</span>
-            <span className="font-semibold text-[#2B1B17] text-right">
-              {completedOrder.location}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-[#2B1B17]/60">{t.checkout.paymentTitle}</span>
-            <span className="font-semibold text-[#2B1B17]">
-              {t.checkout.paymentOptions[completedOrder.paymentMethod]}
-            </span>
-          </div>
-          {completedOrder.promoCode && (
-            <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
-              <span>{t.conversion.promoDiscount} ({completedOrder.promoCode})</span>
-              <span className="tabular-nums">
-                -{formatPrice(completedOrder.promoDiscountTzs || 0, completedOrder.currency)}
+          <div className="mt-5 bg-[#FAF7F2] rounded-2xl p-4 text-left space-y-2 border border-[#2B1B17]/8">
+            <div className="flex items-center justify-between text-[10px] font-bold text-[#2B1B17]/55 uppercase tracking-wider pb-1 border-b border-[#2B1B17]/10">
+              <span>{t.brandName} · Dar es Salaam</span>
+              <span>{t.conversion.receiptTitle}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[#2B1B17]/60">{t.checkout.orderNumber}</span>
+              <span className="font-mono font-bold text-[#2B1B17]">#{receiptCode}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[#2B1B17]/60">{t.checkout.fullName}</span>
+              <span className="font-semibold text-[#2B1B17]">{completedOrder.customerName}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[#2B1B17]/60">{t.checkout.deliveryMethodTitle}</span>
+              <span className="font-semibold text-[#2B1B17] text-right">
+                {completedOrder.location}
               </span>
             </div>
-          )}
-          <div className="flex items-center justify-between text-sm pt-2 border-t border-[#2B1B17]/10">
-            <span className="font-bold text-[#2B1B17]">{t.cart.total}</span>
-            <span className="font-display font-bold text-[#D95D39] tabular-nums">
-              {formatRawAmount(completedOrder.totalInOrderCurrency, completedOrder.currency)}
-            </span>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[#2B1B17]/60">{t.checkout.paymentTitle}</span>
+              <span className="font-semibold text-[#2B1B17]">
+                {t.checkout.paymentOptions[completedOrder.paymentMethod]}
+              </span>
+            </div>
+            {completedOrder.items.length > 0 && (
+              <div className="pt-2 border-t border-[#2B1B17]/8 space-y-1 text-[11px] text-[#2B1B17]/80">
+                {completedOrder.items.map((it, idx) => (
+                  <div key={`${it.productId}-${idx}`} className="flex justify-between gap-2">
+                    <span className="truncate">
+                      {language === 'sw' ? it.nameSw : it.nameEn} ({it.size}) × {it.quantity}
+                    </span>
+                    <span className="font-mono tabular-nums shrink-0">
+                      {formatPrice(it.lineTotalTzs, completedOrder.currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {completedOrder.promoCode && (
+              <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
+                <span>
+                  {t.conversion.promoDiscount} ({completedOrder.promoCode})
+                </span>
+                <span className="tabular-nums">
+                  -{formatPrice(completedOrder.promoDiscountTzs || 0, completedOrder.currency)}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between text-sm pt-2 border-t border-[#2B1B17]/10">
+              <span className="font-bold text-[#2B1B17]">{t.cart.total}</span>
+              <span className="font-display font-bold text-[#D95D39] tabular-nums">
+                {formatRawAmount(completedOrder.totalInOrderCurrency, completedOrder.currency)}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-2.5 no-print">
+            <a
+              href={whatsAppPreviewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full min-h-[48px] px-4 py-3 rounded-xl bg-[#16A34A] hover:bg-[#15803D] text-white font-semibold text-sm inline-flex items-center justify-center gap-2 transition-all active:scale-95"
+            >
+              <MessageCircle className="w-4 h-4" />
+              {t.checkout.completeWhatsAppBtn}
+            </a>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/15 text-[#2B1B17] font-semibold text-xs inline-flex items-center justify-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                {t.conversion.printReceipt}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTrackerOpen(true)}
+                className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/15 text-[#2B1B17] font-semibold text-xs inline-flex items-center justify-center gap-2"
+              >
+                <ClipboardList className="w-4 h-4 text-[#D95D39]" />
+                {t.ordersTrack.trackThisOrder}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                unlockAdmin();
+                setAdminMode(true);
+                onCloseDesktop?.();
+              }}
+              className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#2B1B17] hover:bg-[#3F2923] text-white font-semibold text-xs inline-flex items-center justify-center gap-2 transition-all active:scale-95"
+            >
+              {t.checkout.viewInAdmin}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCompletedOrder(null);
+                setMobileStep('cart');
+                onBrowseProducts();
+                onCloseDesktop?.();
+              }}
+              className="w-full min-h-[44px] px-4 py-2.5 rounded-xl border border-[#2B1B17]/15 text-[#2B1B17] font-semibold text-xs hover:bg-[#FAF7F2] transition-all"
+            >
+              {t.checkout.continueShopping}
+            </button>
           </div>
         </div>
 
-        <div className="mt-6 flex flex-col gap-2.5 no-print">
-          <a
-            href={whatsAppPreviewUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full min-h-[48px] px-4 py-3 rounded-xl bg-[#16A34A] hover:bg-[#15803D] text-white font-semibold text-sm inline-flex items-center justify-center gap-2 transition-all active:scale-95"
-          >
-            <MessageCircle className="w-4 h-4" />
-            {t.checkout.completeWhatsAppBtn}
-          </a>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/15 text-[#2B1B17] font-semibold text-xs inline-flex items-center justify-center gap-2"
-          >
-            <Printer className="w-4 h-4" />
-            {t.conversion.printReceipt}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              unlockAdmin();
-              setAdminMode(true);
-              onCloseDesktop?.();
-            }}
-            className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#2B1B17] hover:bg-[#3F2923] text-white font-semibold text-xs inline-flex items-center justify-center gap-2 transition-all active:scale-95"
-          >
-            {t.checkout.viewInAdmin}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setCompletedOrder(null);
-              setMobileStep('cart');
-              onBrowseProducts();
-              onCloseDesktop?.();
-            }}
-            className="w-full min-h-[44px] px-4 py-2.5 rounded-xl border border-[#2B1B17]/15 text-[#2B1B17] font-semibold text-xs hover:bg-[#FAF7F2] transition-all"
-          >
-            {t.checkout.continueShopping}
-          </button>
-        </div>
-      </div>
+        <OrderTrackerModal
+          open={trackerOpen}
+          isMobileLayout={mode === 'mobile-tab'}
+          initialTab="lookup"
+          initialOrderCode={receiptCode}
+          onClose={() => setTrackerOpen(false)}
+        />
+      </>
     );
   }
 
@@ -521,6 +570,53 @@ export const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
           <p className="text-xs text-[#2B1B17]/60 mt-0.5">{t.cart.vacuumHint}</p>
         </div>
       </label>
+
+      {/* Cart Cross-Sell ("Customers Also Add") */}
+      {crossSellProducts.length > 0 && (
+        <div className="bg-white rounded-2xl p-3.5 border border-[#2B1B17]/10 space-y-2.5">
+          <div className="text-xs font-bold text-[#2B1B17]">{t.cart.crossSellTitle}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {crossSellProducts.map((prod) => {
+              const prodName = getDisplayProductName(prod, language);
+              const pricing = calculateLinePricing(
+                prod.basePrice250g,
+                '250g',
+                1,
+                prod.wholesaleDiscount
+              );
+              return (
+                <div
+                  key={prod.id}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/8"
+                >
+                  <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0">
+                    <ProductArtwork
+                      product={prod}
+                      language={language}
+                      compact
+                      className="w-full h-full"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-[#2B1B17] truncate">{prodName}</div>
+                    <div className="text-[11px] font-semibold text-[#D95D39] tabular-nums">
+                      {formatPrice(pricing.unitFinalTzs, currency)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => addToCart(prod.id, '250g', 1)}
+                    className="min-h-[34px] px-2.5 rounded-lg bg-[#2B1B17] hover:bg-[#3F2923] text-white text-[11px] font-semibold inline-flex items-center gap-1 shrink-0 active:scale-95"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>{t.cart.quickAdd}</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 

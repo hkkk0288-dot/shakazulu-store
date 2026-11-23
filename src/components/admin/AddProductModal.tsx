@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ImagePlus, Plus, Trash2, X } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { Product, ProductBadge } from '../../types';
+import { compressImageFile } from '../../utils/imageUpload';
 
 interface AddProductModalProps {
   open: boolean;
@@ -59,9 +60,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
   const [category, setCategory] = useState<string>(defaultCatId);
   const [basePriceStr, setBasePriceStr] = useState('5000');
   const [discountStr, setDiscountStr] = useState('15');
+  const [stockQtyStr, setStockQtyStr] = useState('25');
   const [emoji, setEmoji] = useState('🍒');
   const [gradientIdx, setGradientIdx] = useState(0);
   const [imageDataUrl, setImageDataUrl] = useState<string | undefined>(undefined);
+  const [compressingPhoto, setCompressingPhoto] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Quick inline new category fields
@@ -87,6 +90,9 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
       setCategory(editingProduct.category);
       setBasePriceStr(String(editingProduct.basePrice250g));
       setDiscountStr(String(editingProduct.wholesaleDiscount));
+      setStockQtyStr(
+        editingProduct.stockCount !== undefined ? String(editingProduct.stockCount) : '25'
+      );
       setEmoji(editingProduct.emoji);
       const foundGradIdx = GRADIENT_PRESETS.findIndex(
         (g) => g.from.toLowerCase() === editingProduct.gradientFrom.toLowerCase()
@@ -104,6 +110,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
       setCategory(categories[0]?.id || 'ubuyu_achari');
       setBasePriceStr('5000');
       setDiscountStr('15');
+      setStockQtyStr('25');
       setEmoji('🍒');
       setGradientIdx(0);
       setImageDataUrl(undefined);
@@ -112,16 +119,19 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
 
   if (!open) return null;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setImageDataUrl(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    setCompressingPhoto(true);
+    setError(null);
+    try {
+      const compressed = await compressImageFile(file);
+      setImageDataUrl(compressed);
+    } catch {
+      setError('Could not process selected image file.');
+    } finally {
+      setCompressingPhoto(false);
+    }
   };
 
   const handleCreateQuickCategory = () => {
@@ -140,6 +150,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
     e.preventDefault();
     const parsedPrice = Number(basePriceStr);
     const parsedDiscount = Number(discountStr);
+    const parsedStock = Math.max(0, Math.min(100000, Math.round(Number(stockQtyStr) || 0)));
 
     if (!nameEn.trim()) {
       setError('Product Name (English) is required.');
@@ -167,6 +178,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
         category,
         basePrice250g: Math.round(parsedPrice),
         wholesaleDiscount: Math.round(parsedDiscount),
+        stockCount: parsedStock,
+        inStock: parsedStock > 0 ? editingProduct.inStock : false,
         badge,
         emoji,
         gradientFrom: grad.from,
@@ -186,7 +199,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
         category,
         basePrice250g: Math.round(parsedPrice),
         wholesaleDiscount: Math.round(parsedDiscount),
-        inStock: true,
+        stockCount: parsedStock,
+        inStock: parsedStock > 0,
         badge,
         emoji,
         gradientFrom: grad.from,
@@ -368,23 +382,25 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block font-semibold text-[#2B1B17] mb-1">
+                {t.admin.addModal.stockQtyLabel}
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={100000}
+                value={stockQtyStr}
+                onChange={(e) => setStockQtyStr(e.target.value)}
+                className="w-full min-h-[40px] px-3 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/15 text-xs font-mono tabular-nums"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-[#2B1B17] mb-1">
                 {t.admin.addModal.originEn}
               </label>
               <input
                 type="text"
                 value={originEn}
                 onChange={(e) => setOriginEn(e.target.value)}
-                className="w-full min-h-[40px] px-3 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/15 text-xs"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-[#2B1B17] mb-1">
-                {t.admin.addModal.originSw}
-              </label>
-              <input
-                type="text"
-                value={originSw}
-                onChange={(e) => setOriginSw(e.target.value)}
                 className="w-full min-h-[40px] px-3 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/15 text-xs"
               />
             </div>
@@ -405,6 +421,18 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
                 <option value="new">{t.product.newBadge}</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block font-semibold text-[#2B1B17] mb-1">
+              {t.admin.addModal.originSw}
+            </label>
+            <input
+              type="text"
+              value={originSw}
+              onChange={(e) => setOriginSw(e.target.value)}
+              className="w-full min-h-[40px] px-3 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/15 text-xs"
+            />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -469,15 +497,25 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
 
               <label className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/15 font-semibold cursor-pointer hover:bg-[#F3ECE2]">
                 <ImagePlus className="w-4 h-4 text-[#D95D39]" />
-                <span>{t.admin.addModal.uploadPhoto}</span>
+                <span>
+                  {compressingPhoto ? t.admin.addModal.compressing : t.admin.addModal.uploadPhoto}
+                </span>
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={handleFileChange}
+                  onChange={(e) => void handleFileChange(e)}
                   className="hidden"
                 />
               </label>
             </div>
+
+            <input
+              type="url"
+              value={imageDataUrl && !imageDataUrl.startsWith('data:') ? imageDataUrl : ''}
+              onChange={(e) => setImageDataUrl(e.target.value || undefined)}
+              placeholder={t.admin.addModal.imageUrlLabel}
+              className="w-full min-h-[38px] px-3 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/15 text-xs"
+            />
 
             {imageDataUrl && (
               <div className="flex items-center gap-3 p-2 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/10">
