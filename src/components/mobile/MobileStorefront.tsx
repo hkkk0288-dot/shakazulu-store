@@ -287,7 +287,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
 
       {/* Main Scrollable Content */}
       <main
-        className={`flex-1 overflow-y-auto px-3.5 pt-3.5 ${
+        className={`flex-1 overflow-y-auto px-3 pt-3.5 ${
           isScopedFrame ? 'pb-20' : 'pb-24'
         }`}
       >
@@ -410,17 +410,19 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                         key={prod.id}
                         type="button"
                         onClick={() => setDetailTarget({ product: prod, size: '250g' })}
-                        className="w-[152px] shrink-0 bg-white rounded-2xl border border-[#2B1B17]/10 overflow-hidden text-left shadow-xs active:scale-95 transition-transform"
+                        className="w-[152px] shrink-0 bg-white rounded-2xl border border-[#2B1B17]/8 overflow-hidden text-left shadow-[0_2px_10px_rgba(43,27,23,0.04)] active:scale-95 transition-transform"
                       >
-                        <div className="aspect-[4/3] w-full">
-                          <ProductArtwork
-                            product={prod}
-                            language={language}
-                            compact
-                            className="w-full h-full"
-                          />
+                        <div className="p-1.5 pb-0">
+                          <div className="aspect-[4/3] w-full rounded-xl overflow-hidden bg-[#F5EFE6]">
+                            <ProductArtwork
+                              product={prod}
+                              language={language}
+                              compact
+                              className="w-full h-full"
+                            />
+                          </div>
                         </div>
-                        <div className="p-2.5">
+                        <div className="p-2.5 pt-2">
                           <div className="flex items-center gap-1 text-[10px] text-[#2B1B17]/65 mb-0.5">
                             <Star className="w-3 h-3 fill-[#F4A261] text-[#F4A261]" />
                             <span className="tabular-nums font-semibold">
@@ -550,7 +552,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2.5">
                   {filteredProducts.map((product) => (
                     <ProductCard
                       key={product.id}
@@ -656,7 +658,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 {filteredProducts.map((product) => (
                   <ProductCard
                     key={product.id}
