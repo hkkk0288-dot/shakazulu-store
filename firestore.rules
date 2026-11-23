@@ -65,7 +65,7 @@ service cloud.firestore {
         data.nameSw is string && data.nameSw.size() >= 1 && data.nameSw.size() <= 120 &&
         data.descriptionEn is string && data.descriptionEn.size() <= 600 &&
         data.descriptionSw is string && data.descriptionSw.size() <= 600 &&
-        data.category in ['ubuyu_achari', 'nuts_seeds', 'spices_masalas', 'dried_fruits_oils'] &&
+        isValidId(data.category) && data.category != 'all' && data.category.size() <= 64 &&
         data.basePrice250g is number && data.basePrice250g > 0 && data.basePrice250g <= 10000000 &&
         data.wholesaleDiscount is number && data.wholesaleDiscount >= 0 && data.wholesaleDiscount <= 40 &&
         data.inStock is bool &&
@@ -157,6 +157,15 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidCategory(data) {
+      return data.keys().hasAll(['id', 'nameEn', 'nameSw', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'nameEn', 'nameSw', 'updatedAt']) &&
+        isValidId(data.id) && data.id != 'all' && data.id.size() <= 64 &&
+        data.nameEn is string && data.nameEn.size() >= 1 && data.nameEn.size() <= 80 &&
+        data.nameSw is string && data.nameSw.size() >= 1 && data.nameSw.size() <= 80 &&
+        data.updatedAt is timestamp;
+    }
+
     // --- Collection Rules ---
 
     // Admins collection
@@ -166,6 +175,15 @@ service cloud.firestore {
       allow create: if isAdmin() && isValidId(adminId) && isValidAdminUser(incoming()) && incoming().createdAt == request.time;
       allow update: if isAdmin() && isValidId(adminId) && isValidAdminUser(incoming()) && incoming().createdAt == existing().createdAt;
       allow delete: if isAdmin() && isValidId(adminId);
+    }
+
+    // Public catalog categories (zero PII)
+    match /categories/{categoryId} {
+      allow get: if isValidId(categoryId);
+      allow list: if true;
+      allow create, update: if isAdmin() && isValidId(categoryId) && categoryId != 'all' &&
+        isValidCategory(incoming()) && incoming().id == categoryId && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(categoryId);
     }
 
     // Public catalog products (zero PII)

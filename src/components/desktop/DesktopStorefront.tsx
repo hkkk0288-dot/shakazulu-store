@@ -51,6 +51,7 @@ type SortOption = 'featured' | 'price_low' | 'price_high' | 'rating';
 export const DesktopStorefront: React.FC = () => {
   const {
     products,
+    categories: storeCategories,
     orders,
     cart,
     cartSummary,
@@ -61,6 +62,7 @@ export const DesktopStorefront: React.FC = () => {
     user,
     signInWithGoogle,
     signOutUser,
+    getCategoryLabel,
     setLanguage,
     setCurrency,
     setVacuumPacked,
@@ -94,13 +96,13 @@ export const DesktopStorefront: React.FC = () => {
       if (inStockOnly && !p.inStock) return false;
 
       if (q) {
-        const catEn = t.categories[p.category].toLowerCase();
+        const catLabel = getCategoryLabel(p.category).toLowerCase();
         const matches =
           p.nameEn.toLowerCase().includes(q) ||
           p.nameSw.toLowerCase().includes(q) ||
           p.descriptionEn.toLowerCase().includes(q) ||
           p.descriptionSw.toLowerCase().includes(q) ||
-          catEn.includes(q);
+          catLabel.includes(q);
         if (!matches) return false;
       }
 
@@ -139,7 +141,7 @@ export const DesktopStorefront: React.FC = () => {
     priceRange,
     defaultWeight,
     sortBy,
-    t.categories,
+    getCategoryLabel,
   ]);
 
   const scrollToSection = (id: string) => {
@@ -163,13 +165,10 @@ export const DesktopStorefront: React.FC = () => {
     setSortBy('featured');
   };
 
-  const categories: CategoryId[] = [
-    'all',
-    'ubuyu_achari',
-    'nuts_seeds',
-    'spices_masalas',
-    'dried_fruits_oils',
-  ];
+  const categoryIds: CategoryId[] = useMemo(
+    () => ['all', ...storeCategories.map((c) => c.id)],
+    [storeCategories]
+  );
 
   const collageCards = [
     {
@@ -622,7 +621,7 @@ export const DesktopStorefront: React.FC = () => {
                 <span className="block text-xs font-semibold text-[#2B1B17]/70 mb-2">
                   {t.catalog.category}
                 </span>
-                {categories.map((cat) => {
+                {categoryIds.map((cat) => {
                   const active = selectedCategory === cat;
                   return (
                     <button
@@ -635,7 +634,7 @@ export const DesktopStorefront: React.FC = () => {
                           : 'text-[#2B1B17]/80 hover:bg-[#FAF7F2]'
                       }`}
                     >
-                      <span>{t.categories[cat]}</span>
+                      <span>{getCategoryLabel(cat)}</span>
                       {active && <Check className="w-3.5 h-3.5 text-[#F4A261]" />}
                     </button>
                   );

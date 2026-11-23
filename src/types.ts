@@ -1,12 +1,13 @@
 export type Language = 'en' | 'sw';
 export type Currency = 'TZS' | 'USD';
 
-export type CategoryId =
-  | 'all'
-  | 'ubuyu_achari'
-  | 'nuts_seeds'
-  | 'spices_masalas'
-  | 'dried_fruits_oils';
+export type CategoryId = string;
+
+export interface CategoryItem {
+  id: string;
+  nameEn: string;
+  nameSw: string;
+}
 
 export type SizeOption = '250g' | '500g' | '1kg' | '5kg';
 

@@ -2,6 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import {
   collection,
+  deleteDoc,
+  deleteField,
   doc,
   getDocs,
   onSnapshot,
@@ -13,7 +15,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { SEED_COUPONS, SEED_ORDERS, SEED_PRODUCTS } from '../data/seedData';
+import { SEED_CATEGORIES, SEED_COUPONS, SEED_ORDERS, SEED_PRODUCTS } from '../data/seedData';
 import {
   ADMIN_EMAIL,
   auth,
@@ -25,6 +27,7 @@ import {
 import { getTranslations } from '../i18n/translations';
 import {
   CartItem,
+  CategoryItem,
   ComboBundle,
   Coupon,
   Currency,
@@ -51,6 +54,7 @@ const STORAGE_KEYS = {
   currency: 'shakazulu_currency_v1',
   vacuumPacked: 'shakazulu_vacuum_v1',
   coupons: 'shakazulu_coupons_v1',
+  categories: 'shakazulu_categories_v1',
 };
 
 function safeReadStorage<T>(key: string, fallback: T): T {
@@ -93,6 +97,7 @@ export interface PlaceOrderInput {
 
 interface StoreContextValue {
   products: Product[];
+  categories: CategoryItem[];
   orders: Order[];
   coupons: Coupon[];
   cart: CartItem[];
@@ -109,6 +114,7 @@ interface StoreContextValue {
   isCloudAdmin: boolean;
   cloudCatalogSynced: boolean;
   t: ReturnType<typeof getTranslations>;
+  getCategoryLabel: (categoryId: string) => string;
   setLanguage: (lang: Language) => void;
   setCurrency: (curr: Currency) => void;
   setVacuumPacked: (val: boolean) => void;
@@ -131,7 +137,11 @@ interface StoreContextValue {
   clearCart: () => void;
   placeOrder: (input: PlaceOrderInput) => Promise<Order>;
   updateProduct: (productId: string, updates: Partial<Product>) => void;
-  addProduct: (product: Omit<Product, 'id' | 'rating' | 'reviewCount' | 'badge'>) => Product;
+  deleteProduct: (productId: string) => void;
+  addProduct: (product: Omit<Product, 'id' | 'rating' | 'reviewCount' | 'badge'> & { badge?: ProductBadge }) => Product;
+  addCategory: (input: { nameEn: string; nameSw: string }) => CategoryItem;
+  updateCategory: (categoryId: string, updates: { nameEn: string; nameSw: string }) => void;
+  deleteCategory: (categoryId: string) => boolean;
   updateOrderStatus: (orderId: string, nextStatus: OrderStatus) => void;
   resetDemoData: () => void;
   cartSummary: {
@@ -152,6 +162,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     safeReadStorage<Product[]>(STORAGE_KEYS.products, SEED_PRODUCTS)
   );
   const [cloudProducts, setCloudProducts] = useState<Product[] | null>(null);
+
+  const [localCategories, setLocalCategories] = useState<CategoryItem[]>(() =>
+    safeReadStorage<CategoryItem[]>(STORAGE_KEYS.categories, SEED_CATEGORIES)
+  );
+  const [cloudCategories, setCloudCategories] = useState<CategoryItem[] | null>(null);
 
   const [localOrders, setLocalOrders] = useState<Order[]>(() =>
     safeReadStorage<Order[]>(STORAGE_KEYS.orders, SEED_ORDERS)
@@ -246,6 +261,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       (error) => {
         handleFirestoreError(error, OperationType.LIST, 'products');
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  // Real-time Categories listener
+  useEffect(() => {
+    const categoriesRef = collection(db, 'categories');
+    const unsub = onSnapshot(
+      categoriesRef,
+      (snapshot) => {
+        if (snapshot.empty) {
+          setCloudCategories(null);
+          return;
+        }
+        const loaded: CategoryItem[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: String(data.id || d.id),
+            nameEn: String(data.nameEn || d.id),
+            nameSw: String(data.nameSw || data.nameEn || d.id),
+          };
+        });
+        setCloudCategories(loaded);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'categories');
       }
     );
     return () => unsub();
@@ -364,6 +406,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return baseList;
   }, [cloudProducts, localProducts]);
 
+  const categories = useMemo(() => {
+    const source = cloudCategories ?? localCategories;
+    const seedOrder = SEED_CATEGORIES.map((c) => c.id);
+    return [...source].sort((a, b) => {
+      const idxA = seedOrder.indexOf(a.id);
+      const idxB = seedOrder.indexOf(b.id);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.nameEn.localeCompare(b.nameEn);
+    });
+  }, [cloudCategories, localCategories]);
+
   const coupons = cloudCoupons ?? localCoupons;
   const appliedCoupon = useMemo(
     () =>
@@ -383,6 +438,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     safeWriteStorage(STORAGE_KEYS.products, localProducts);
   }, [localProducts]);
+
+  useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.categories, localCategories);
+  }, [localCategories]);
 
   useEffect(() => {
     safeWriteStorage(STORAGE_KEYS.orders, localOrders);
@@ -420,6 +479,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const t = useMemo(() => getTranslations(language), [language]);
 
+  const getCategoryLabel = useCallback(
+    (categoryId: string): string => {
+      if (categoryId === 'all') return t.categories.all;
+      const found = categories.find((c) => c.id === categoryId);
+      if (found) {
+        return language === 'sw' ? found.nameSw || found.nameEn : found.nameEn;
+      }
+      return (t.categories as Record<string, string>)[categoryId] || categoryId;
+    },
+    [categories, language, t.categories]
+  );
+
   const setLanguage = useCallback((lang: Language) => setLanguageState(lang), []);
   const setCurrency = useCallback((curr: Currency) => setCurrencyState(curr), []);
   const setVacuumPacked = useCallback((val: boolean) => setVacuumPackedState(val), []);
@@ -451,9 +522,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!isCloudAdmin) return;
     try {
       const batch = writeBatch(db);
+      SEED_CATEGORIES.forEach((cat) => {
+        const catRef = doc(db, 'categories', cat.id);
+        batch.set(catRef, {
+          id: cat.id,
+          nameEn: cat.nameEn.slice(0, 80),
+          nameSw: cat.nameSw.slice(0, 80),
+          updatedAt: serverTimestamp(),
+        });
+      });
       SEED_PRODUCTS.forEach((p) => {
         const ref = doc(db, 'products', p.id);
-        batch.set(ref, {
+        const payload: Record<string, unknown> = {
           nameEn: p.nameEn.slice(0, 120),
           nameSw: p.nameSw.slice(0, 120),
           descriptionEn: p.descriptionEn.slice(0, 600),
@@ -472,7 +552,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           originSw: p.originSw.slice(0, 80),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
+        };
+        if (p.image) payload.image = p.image;
+        batch.set(ref, payload);
       });
       await batch.commit();
       showToast(t.admin.products.updatedToast);
@@ -843,10 +925,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           allowedUpdates.inStock = updates.inStock;
         }
         if (typeof updates.nameEn === 'string') {
-          allowedUpdates.nameEn = updates.nameEn.slice(0, 120);
+          allowedUpdates.nameEn = updates.nameEn.trim().slice(0, 120);
         }
         if (typeof updates.nameSw === 'string') {
-          allowedUpdates.nameSw = updates.nameSw.slice(0, 120);
+          allowedUpdates.nameSw = updates.nameSw.trim().slice(0, 120);
+        }
+        if (typeof updates.descriptionEn === 'string') {
+          allowedUpdates.descriptionEn = updates.descriptionEn.trim().slice(0, 600);
+        }
+        if (typeof updates.descriptionSw === 'string') {
+          allowedUpdates.descriptionSw = updates.descriptionSw.trim().slice(0, 600);
+        }
+        if (typeof updates.category === 'string' && updates.category !== 'all') {
+          allowedUpdates.category = updates.category.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+        }
+        if (typeof updates.originEn === 'string') {
+          allowedUpdates.originEn = updates.originEn.trim().slice(0, 80);
+        }
+        if (typeof updates.originSw === 'string') {
+          allowedUpdates.originSw = updates.originSw.trim().slice(0, 80);
+        }
+        if ('badge' in updates) {
+          allowedUpdates.badge = updates.badge ?? 'none';
+        }
+        if (typeof updates.emoji === 'string') {
+          allowedUpdates.emoji = updates.emoji.slice(0, 16);
+        }
+        if (typeof updates.gradientFrom === 'string') {
+          allowedUpdates.gradientFrom = updates.gradientFrom;
+        }
+        if (typeof updates.gradientTo === 'string') {
+          allowedUpdates.gradientTo = updates.gradientTo;
+        }
+        if ('image' in updates) {
+          if (updates.image && updates.image.length <= 500000) {
+            allowedUpdates.image = updates.image;
+          } else {
+            allowedUpdates.image = deleteField();
+          }
         }
         updateDoc(doc(db, 'products', productId), allowedUpdates).catch((error) => {
           handleFirestoreError(error, OperationType.UPDATE, path);
@@ -861,15 +977,37 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [isCloudAdmin, cloudProducts, showToast, t.admin.products.updatedToast]
   );
 
+  const deleteProduct = useCallback(
+    (productId: string) => {
+      if (isCloudAdmin && cloudProducts) {
+        const path = `products/${productId}`;
+        deleteDoc(doc(db, 'products', productId)).catch((error) => {
+          handleFirestoreError(error, OperationType.DELETE, path);
+        });
+      } else {
+        setLocalProducts((prev) => prev.filter((p) => p.id !== productId));
+      }
+      setCart((prev) => prev.filter((item) => item.productId !== productId));
+      showToast(t.admin.products.deletedToast);
+    },
+    [isCloudAdmin, cloudProducts, showToast, t.admin.products.deletedToast]
+  );
+
   const addProduct = useCallback(
-    (productInput: Omit<Product, 'id' | 'rating' | 'reviewCount' | 'badge'>): Product => {
+    (
+      productInput: Omit<Product, 'id' | 'rating' | 'reviewCount' | 'badge'> & {
+        badge?: ProductBadge;
+      }
+    ): Product => {
       const id = `prod-${Date.now()}`;
+      const badgeVal: ProductBadge =
+        productInput.badge === undefined ? 'new' : productInput.badge;
       const created: Product = {
         ...productInput,
         id,
         rating: 5.0,
         reviewCount: 1,
-        badge: 'new',
+        badge: badgeVal,
       };
 
       if (isCloudAdmin) {
@@ -885,7 +1023,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           inStock: created.inStock,
           rating: created.rating,
           reviewCount: created.reviewCount,
-          badge: 'new',
+          badge: badgeVal ?? 'none',
           emoji: created.emoji.slice(0, 16),
           gradientFrom: created.gradientFrom,
           gradientTo: created.gradientTo,
@@ -908,6 +1046,124 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return created;
     },
     [isCloudAdmin, showToast, t.admin.addModal.createdToast]
+  );
+
+  const addCategory = useCallback(
+    (input: { nameEn: string; nameSw: string }): CategoryItem => {
+      const cleanEn = input.nameEn.trim().slice(0, 80);
+      const cleanSw = (input.nameSw.trim() || cleanEn).slice(0, 80);
+      let baseSlug = cleanEn
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 36);
+      if (!baseSlug || baseSlug === 'all') {
+        baseSlug = `cat_${Date.now()}`;
+      }
+      const id = categories.some((c) => c.id === baseSlug)
+        ? `${baseSlug}_${Date.now().toString().slice(-4)}`
+        : baseSlug;
+
+      const created: CategoryItem = {
+        id,
+        nameEn: cleanEn || id,
+        nameSw: cleanSw || cleanEn || id,
+      };
+
+      if (isCloudAdmin) {
+        if (!cloudCategories) {
+          const batch = writeBatch(db);
+          localCategories.forEach((cat) => {
+            batch.set(doc(db, 'categories', cat.id), {
+              id: cat.id,
+              nameEn: cat.nameEn.slice(0, 80),
+              nameSw: cat.nameSw.slice(0, 80),
+              updatedAt: serverTimestamp(),
+            });
+          });
+          batch.set(doc(db, 'categories', created.id), {
+            ...created,
+            updatedAt: serverTimestamp(),
+          });
+          batch.commit().catch((err) =>
+            handleFirestoreError(err, OperationType.WRITE, `categories/${created.id}`)
+          );
+        } else {
+          setDoc(doc(db, 'categories', created.id), {
+            ...created,
+            updatedAt: serverTimestamp(),
+          }).catch((err) =>
+            handleFirestoreError(err, OperationType.CREATE, `categories/${created.id}`)
+          );
+        }
+      } else {
+        setLocalCategories((prev) => [...prev, created]);
+      }
+
+      showToast(t.admin.products.catSavedToast);
+      return created;
+    },
+    [
+      categories,
+      cloudCategories,
+      isCloudAdmin,
+      localCategories,
+      showToast,
+      t.admin.products.catSavedToast,
+    ]
+  );
+
+  const updateCategory = useCallback(
+    (categoryId: string, updates: { nameEn: string; nameSw: string }) => {
+      const cleanEn = updates.nameEn.trim().slice(0, 80);
+      const cleanSw = (updates.nameSw.trim() || cleanEn).slice(0, 80);
+      if (!cleanEn || categoryId === 'all') return;
+
+      if (isCloudAdmin && cloudCategories) {
+        setDoc(doc(db, 'categories', categoryId), {
+          id: categoryId,
+          nameEn: cleanEn,
+          nameSw: cleanSw,
+          updatedAt: serverTimestamp(),
+        }).catch((err) =>
+          handleFirestoreError(err, OperationType.UPDATE, `categories/${categoryId}`)
+        );
+      } else {
+        setLocalCategories((prev) =>
+          prev.map((c) => (c.id === categoryId ? { ...c, nameEn: cleanEn, nameSw: cleanSw } : c))
+        );
+      }
+      showToast(t.admin.products.catSavedToast);
+    },
+    [cloudCategories, isCloudAdmin, showToast, t.admin.products.catSavedToast]
+  );
+
+  const deleteCategory = useCallback(
+    (categoryId: string): boolean => {
+      if (categoryId === 'all') return false;
+      const inUse = products.some((p) => p.category === categoryId);
+      if (inUse) {
+        showToast(t.admin.products.catInUse);
+        return false;
+      }
+      if (isCloudAdmin && cloudCategories) {
+        deleteDoc(doc(db, 'categories', categoryId)).catch((err) =>
+          handleFirestoreError(err, OperationType.DELETE, `categories/${categoryId}`)
+        );
+      } else {
+        setLocalCategories((prev) => prev.filter((c) => c.id !== categoryId));
+      }
+      showToast(t.admin.products.catDeletedToast);
+      return true;
+    },
+    [
+      cloudCategories,
+      isCloudAdmin,
+      products,
+      showToast,
+      t.admin.products.catDeletedToast,
+      t.admin.products.catInUse,
+    ]
   );
 
   const updateOrderStatus = useCallback(
@@ -952,10 +1208,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const resetDemoData = useCallback(() => {
     setLocalProducts(SEED_PRODUCTS);
+    setLocalCategories(SEED_CATEGORIES);
     setLocalOrders(SEED_ORDERS);
     setCart([]);
     setVacuumPackedState(false);
     safeWriteStorage(STORAGE_KEYS.products, SEED_PRODUCTS);
+    safeWriteStorage(STORAGE_KEYS.categories, SEED_CATEGORIES);
     safeWriteStorage(STORAGE_KEYS.orders, SEED_ORDERS);
     safeWriteStorage(STORAGE_KEYS.cart, []);
     showToast(t.admin.resetDone);
@@ -963,6 +1221,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const value: StoreContextValue = {
     products,
+    categories,
     orders,
     coupons,
     cart,
@@ -979,6 +1238,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     isCloudAdmin,
     cloudCatalogSynced: cloudProducts !== null,
     t,
+    getCategoryLabel,
     setLanguage,
     setCurrency,
     setVacuumPacked,
@@ -1001,7 +1261,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     clearCart,
     placeOrder,
     updateProduct,
+    deleteProduct,
     addProduct,
+    addCategory,
+    updateCategory,
+    deleteCategory,
     updateOrderStatus,
     resetDemoData,
     cartSummary,

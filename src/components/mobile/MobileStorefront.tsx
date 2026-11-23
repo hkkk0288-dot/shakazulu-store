@@ -46,6 +46,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
 }) => {
   const {
     products,
+    categories: storeCategories,
     orders,
     cartSummary,
     language,
@@ -53,6 +54,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
     user,
     signInWithGoogle,
     signOutUser,
+    getCategoryLabel,
     setLanguage,
     setCurrency,
     setAdminMode,
@@ -89,7 +91,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
     return products.filter((p) => {
       if (selectedCategory !== 'all' && p.category !== selectedCategory) return false;
       if (q) {
-        const catLabel = t.categories[p.category].toLowerCase();
+        const catLabel = getCategoryLabel(p.category).toLowerCase();
         return (
           p.nameEn.toLowerCase().includes(q) ||
           p.nameSw.toLowerCase().includes(q) ||
@@ -98,15 +100,12 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
       }
       return true;
     });
-  }, [products, selectedCategory, searchQuery, t.categories]);
+  }, [products, selectedCategory, searchQuery, getCategoryLabel]);
 
-  const categories: CategoryId[] = [
-    'all',
-    'ubuyu_achari',
-    'nuts_seeds',
-    'spices_masalas',
-    'dried_fruits_oils',
-  ];
+  const categoryIds: CategoryId[] = useMemo(
+    () => ['all', ...storeCategories.map((c) => c.id)],
+    [storeCategories]
+  );
 
   const promoGradients = [
     'linear-gradient(135deg, #D95D39 0%, #8C1D18 100%)',
@@ -294,7 +293,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
 
             {/* Category Chips */}
             <div className="flex gap-2 overflow-x-auto no-scrollbar py-0.5">
-              {categories.map((cat) => {
+              {categoryIds.map((cat) => {
                 const active = selectedCategory === cat;
                 return (
                   <button
@@ -307,7 +306,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                         : 'bg-white text-[#2B1B17]/80 border border-[#2B1B17]/10'
                     }`}
                   >
-                    {t.categories[cat]}
+                    {getCategoryLabel(cat)}
                   </button>
                 );
               })}
@@ -443,7 +442,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
             <section>
               <div className="flex items-center justify-between mb-2.5">
                 <h2 className="font-display font-bold text-base text-[#2B1B17]">
-                  {t.categories[selectedCategory]}
+                  {getCategoryLabel(selectedCategory)}
                 </h2>
                 <span className="text-xs text-[#2B1B17]/60 tabular-nums">
                   {filteredProducts.length} {t.catalog.showingCount}
@@ -535,7 +534,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
             </h1>
 
             <div className="flex gap-2 overflow-x-auto no-scrollbar py-0.5">
-              {categories.map((cat) => {
+              {categoryIds.map((cat) => {
                 const active = selectedCategory === cat;
                 return (
                   <button
@@ -548,7 +547,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
                         : 'bg-white text-[#2B1B17]/80 border border-[#2B1B17]/10'
                     }`}
                   >
-                    {t.categories[cat]}
+                    {getCategoryLabel(cat)}
                   </button>
                 );
               })}

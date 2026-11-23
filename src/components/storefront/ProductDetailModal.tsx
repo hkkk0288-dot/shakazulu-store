@@ -26,7 +26,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   isScopedFrame = false,
   onClose,
 }) => {
-  const { language, currency, t, addToCart } = useStore();
+  const { language, currency, t, getCategoryLabel, addToCart } = useStore();
   const [size, setSize] = useState<SizeOption>(initialSize);
   const [qty, setQty] = useState<number>(1);
 
@@ -93,7 +93,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
             <div>
               <div className="flex items-center gap-2 text-xs text-[#2B1B17]/60 mb-1">
-                <span>{t.categories[product.category]}</span>
+                <span>{getCategoryLabel(product.category)}</span>
                 <span aria-hidden="true">·</span>
                 <span>{origin}</span>
                 <span aria-hidden="true">·</span>
@@ -280,7 +280,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         <div className="p-6 flex flex-col justify-between gap-4">
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-xs text-[#2B1B17]/60">
-              <span>{t.categories[product.category]}</span>
+              <span>{getCategoryLabel(product.category)}</span>
               <span aria-hidden="true">·</span>
               <span>{origin}</span>
             </div>

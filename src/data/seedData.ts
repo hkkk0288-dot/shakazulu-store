@@ -1,4 +1,11 @@
-import { ComboBundle, Coupon, CustomerReview, Order, Product } from '../types';
+import { CategoryItem, ComboBundle, Coupon, CustomerReview, Order, Product } from '../types';
+
+export const SEED_CATEGORIES: CategoryItem[] = [
+  { id: 'ubuyu_achari', nameEn: 'Ubuyu & Achari', nameSw: 'Ubuyu & Achari' },
+  { id: 'nuts_seeds', nameEn: 'Nuts & Seeds', nameSw: 'Karanga, Korosho & Mbegu' },
+  { id: 'spices_masalas', nameEn: 'Spices & Masalas', nameSw: 'Viungo & Masala' },
+  { id: 'dried_fruits_oils', nameEn: 'Dried Fruits & Oils', nameSw: 'Matunda Makavu & Mafuta' },
+];
 
 export const SEED_PRODUCTS: Product[] = [
   {

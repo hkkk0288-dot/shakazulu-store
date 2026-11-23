@@ -53,7 +53,9 @@
         },
         "category": {
           "type": "string",
-          "enum": ["ubuyu_achari", "nuts_seeds", "spices_masalas", "dried_fruits_oils"],
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "Catalog category identifier."
         },
         "basePrice250g": {
@@ -396,12 +398,48 @@
         }
       },
       "required": ["code", "discountPercent", "active", "descriptionEn", "descriptionSw", "updatedAt"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Dynamic storefront product category managed by store admins.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Category slug identifier."
+        },
+        "nameEn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Category name in English."
+        },
+        "nameSw": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Category name in Swahili."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": ["id", "nameEn", "nameSw", "updatedAt"]
     }
   },
   "firestore": {
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/AdminUser" },
       "description": "Authorized store administrators."
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Publicly readable store categories, writable only by admins."
     },
     "/products/{productId}": {
       "schema": { "$ref": "#/entities/Product" },

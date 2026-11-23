@@ -23,7 +23,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   compact = false,
   onOpenDetail,
 }) => {
-  const { language, currency, t, addToCart } = useStore();
+  const { language, currency, t, getCategoryLabel, addToCart } = useStore();
   const [selectedSize, setSelectedSize] = useState<SizeOption>(defaultSize);
 
   // Sync defaultSize prop when weight filter changes
@@ -93,7 +93,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <div>
           {/* Unboxed metadata row */}
           <div className="flex items-center justify-between gap-2 text-[11px] text-[#2B1B17]/60 mb-1">
-            <span className="truncate">{t.categories[product.category]}</span>
+            <span className="truncate">{getCategoryLabel(product.category)}</span>
             <span className="inline-flex items-center gap-1 shrink-0 font-medium text-[#2B1B17]/80 tabular-nums">
               <Star className="w-3 h-3 fill-[#F4A261] text-[#F4A261]" aria-hidden="true" />
               {product.rating.toFixed(1)}

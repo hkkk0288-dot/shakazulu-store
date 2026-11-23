@@ -7,16 +7,19 @@ import {
   ClipboardCopy,
   Clock,
   Cloud,
+  FolderPlus,
   Globe,
   KeyRound,
   LogIn,
   Package,
+  Pencil,
   Plus,
   Printer,
   RotateCcw,
   Search,
   ShoppingBag,
   Tag,
+  Trash2,
   Truck,
   X,
 } from 'lucide-react';
@@ -51,6 +54,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
 }) => {
   const {
     products,
+    categories: storeCategories,
     orders,
     coupons,
     language,
@@ -58,6 +62,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
     adminUnlocked,
     isCloudAdmin,
     cloudCatalogSynced,
+    getCategoryLabel,
     setLanguage,
     setCurrency,
     setAdminMode,
@@ -68,6 +73,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
     upsertCoupon,
     toggleCouponActive,
     updateProduct,
+    deleteProduct,
+    addCategory,
+    updateCategory,
+    deleteCategory,
     updateOrderStatus,
     resetDemoData,
     showToast,
@@ -81,6 +90,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [productSearch, setProductSearch] = useState('');
   const [productCategory, setProductCategory] = useState<CategoryId>('all');
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [confirmDeleteProductId, setConfirmDeleteProductId] = useState<string | null>(null);
+  const [newCatEn, setNewCatEn] = useState('');
+  const [newCatSw, setNewCatSw] = useState('');
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editCatEn, setEditCatEn] = useState('');
+  const [editCatSw, setEditCatSw] = useState('');
   const [newCouponCode, setNewCouponCode] = useState('');
   const [newCouponPct, setNewCouponPct] = useState('10');
 
@@ -140,12 +156,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
         return (
           p.nameEn.toLowerCase().includes(q) ||
           p.nameSw.toLowerCase().includes(q) ||
-          t.categories[p.category].toLowerCase().includes(q)
+          getCategoryLabel(p.category).toLowerCase().includes(q)
         );
       }
       return true;
     });
-  }, [products, productSearch, productCategory, t.categories]);
+  }, [products, productSearch, productCategory, getCategoryLabel]);
 
   const filteredOrders = useMemo(() => {
     if (orderFilter === 'all') return orders;
@@ -505,7 +521,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
     </div>
   );
 
-  // Quick Price & Stock Manager
+  // Quick Price, Stock, Product & Category Manager
   const renderProductsManager = () => (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -514,12 +530,150 @@ export const AdminView: React.FC<AdminViewProps> = ({
         </h2>
         <button
           type="button"
-          onClick={() => setAddModalOpen(true)}
+          onClick={() => {
+            setEditingProduct(null);
+            setAddModalOpen(true);
+          }}
           className="min-h-[44px] px-4 rounded-xl bg-[#D95D39] hover:bg-[#C14C2B] text-white text-xs font-semibold inline-flex items-center gap-1.5 active:scale-95 transition-transform"
         >
           <Plus className="w-4 h-4" />
           <span>{t.admin.products.addProduct}</span>
         </button>
+      </div>
+
+      {/* Store Categories Management Card */}
+      <div className="bg-white rounded-2xl border border-[#2B1B17]/10 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-display font-bold text-sm text-[#2B1B17] inline-flex items-center gap-2">
+            <FolderPlus className="w-4 h-4 text-[#D95D39]" />
+            <span>{t.admin.products.categoriesTitle}</span>
+          </h3>
+          <span className="text-[11px] font-semibold text-[#2B1B17]/55 tabular-nums">
+            {storeCategories.length}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <input
+            type="text"
+            value={newCatEn}
+            onChange={(e) => setNewCatEn(e.target.value)}
+            placeholder={t.admin.products.catNameEn}
+            className="flex-1 min-w-[140px] min-h-[40px] px-3 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/15 text-xs focus:outline-none focus:ring-2 focus:ring-[#D95D39]"
+          />
+          <input
+            type="text"
+            value={newCatSw}
+            onChange={(e) => setNewCatSw(e.target.value)}
+            placeholder={t.admin.products.catNameSw}
+            className="flex-1 min-w-[140px] min-h-[40px] px-3 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/15 text-xs focus:outline-none focus:ring-2 focus:ring-[#D95D39]"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!newCatEn.trim()) return;
+              addCategory({
+                nameEn: newCatEn.trim(),
+                nameSw: newCatSw.trim() || newCatEn.trim(),
+              });
+              setNewCatEn('');
+              setNewCatSw('');
+            }}
+            className="min-h-[40px] px-4 rounded-xl bg-[#2B1B17] hover:bg-[#3F2923] text-white text-xs font-semibold whitespace-nowrap shrink-0 inline-flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5 text-[#F4A261]" />
+            <span>{t.admin.products.addCatBtn}</span>
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          {storeCategories.map((cat) => {
+            const count = products.filter((p) => p.category === cat.id).length;
+            const isEditingThis = editingCategoryId === cat.id;
+
+            if (isEditingThis) {
+              return (
+                <div
+                  key={cat.id}
+                  className="flex flex-wrap items-center gap-1.5 bg-[#FAF7F2] border border-[#D95D39]/40 rounded-xl p-1.5 text-xs"
+                >
+                  <input
+                    type="text"
+                    value={editCatEn}
+                    onChange={(e) => setEditCatEn(e.target.value)}
+                    placeholder={t.admin.products.catNameEn}
+                    className="w-28 px-2 py-1 rounded-lg bg-white border border-[#2B1B17]/15 text-xs"
+                  />
+                  <input
+                    type="text"
+                    value={editCatSw}
+                    onChange={(e) => setEditCatSw(e.target.value)}
+                    placeholder={t.admin.products.catNameSw}
+                    className="w-28 px-2 py-1 rounded-lg bg-white border border-[#2B1B17]/15 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateCategory(cat.id, { nameEn: editCatEn, nameSw: editCatSw });
+                      setEditingCategoryId(null);
+                    }}
+                    className="px-2 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingCategoryId(null)}
+                    className="px-2 py-1 rounded-lg bg-white border border-[#2B1B17]/15 text-[11px]"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={cat.id}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#FAF7F2] border border-[#2B1B17]/12 text-xs"
+              >
+                <span className="font-semibold text-[#2B1B17]">
+                  {getCategoryLabel(cat.id)}
+                </span>
+                <span className="text-[11px] text-[#2B1B17]/55 tabular-nums">({count})</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingCategoryId(cat.id);
+                    setEditCatEn(cat.nameEn);
+                    setEditCatSw(cat.nameSw);
+                  }}
+                  aria-label={`Edit ${cat.nameEn}`}
+                  className="text-[#2B1B17]/55 hover:text-[#D95D39] p-0.5"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const deleted = deleteCategory(cat.id);
+                    if (deleted && productCategory === cat.id) {
+                      setProductCategory('all');
+                    }
+                  }}
+                  aria-label={`Delete ${cat.nameEn}`}
+                  className={`p-0.5 ${
+                    count > 0
+                      ? 'text-[#2B1B17]/25 hover:text-[#2B1B17]/45'
+                      : 'text-red-500 hover:text-red-700'
+                  }`}
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Search + Category Filter */}
@@ -541,10 +695,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
           className="min-h-[42px] px-3 rounded-xl bg-white border border-[#2B1B17]/12 text-xs font-semibold"
         >
           <option value="all">{t.categories.all}</option>
-          <option value="ubuyu_achari">{t.categories.ubuyu_achari}</option>
-          <option value="nuts_seeds">{t.categories.nuts_seeds}</option>
-          <option value="spices_masalas">{t.categories.spices_masalas}</option>
-          <option value="dried_fruits_oils">{t.categories.dried_fruits_oils}</option>
+          {storeCategories.map((cat) => (
+            <option key={cat.id} value={cat.id}>
+              {getCategoryLabel(cat.id)}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -558,6 +713,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
             const draftPrice = priceDrafts[prod.id] ?? String(prod.basePrice250g);
             const draftDisc = discountDrafts[prod.id] ?? String(prod.wholesaleDiscount);
             const err = productErrors[prod.id];
+            const isConfirmingDelete = confirmDeleteProductId === prod.id;
 
             return (
               <div
@@ -574,7 +730,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         {getDisplayProductName(prod, language)}
                       </h3>
                       <span className="text-[11px] text-[#2B1B17]/60">
-                        {t.categories[prod.category]}
+                        {getCategoryLabel(prod.category)}
                       </span>
                     </div>
                   </div>
@@ -636,6 +792,47 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     5kg: {formatPrice(p5kg.unitFinalTzs, currency)}
                   </span>
                 </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1 border-t border-[#2B1B17]/8">
+                  <button
+                    type="button"
+                    onClick={() => setEditingProduct(prod)}
+                    className="min-h-[38px] px-3 rounded-xl bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/12 text-[#2B1B17] text-xs font-semibold inline-flex items-center gap-1.5"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-[#D95D39]" />
+                    <span>{t.admin.products.editBtn}</span>
+                  </button>
+                  {isConfirmingDelete ? (
+                    <div className="inline-flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          deleteProduct(prod.id);
+                          setConfirmDeleteProductId(null);
+                        }}
+                        className="min-h-[38px] px-3 rounded-xl bg-red-600 text-white text-xs font-bold"
+                      >
+                        {t.admin.products.confirmDelete}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteProductId(null)}
+                        className="min-h-[38px] px-2.5 rounded-xl bg-[#FAF7F2] text-xs font-semibold"
+                      >
+                        {t.admin.addModal.cancelBtn}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteProductId(prod.id)}
+                      className="min-h-[38px] px-3 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold inline-flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{t.admin.products.deleteBtn}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -675,6 +872,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 const draftPrice = priceDrafts[prod.id] ?? String(prod.basePrice250g);
                 const draftDisc = discountDrafts[prod.id] ?? String(prod.wholesaleDiscount);
                 const err = productErrors[prod.id];
+                const isConfirmingDelete = confirmDeleteProductId === prod.id;
 
                 return (
                   <tr key={prod.id} className="hover:bg-[#FAF7F2]/50">
@@ -693,7 +891,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                             {getDisplayProductName(prod, language)}
                           </div>
                           <div className="text-[11px] text-[#2B1B17]/55">
-                            {t.categories[prod.category]}
+                            {getCategoryLabel(prod.category)}
                           </div>
                           {err && <div className="text-[11px] font-semibold text-red-600">{err}</div>}
                         </div>
@@ -740,17 +938,60 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     </td>
 
                     <td className="py-3 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => updateProduct(prod.id, { inStock: !prod.inStock })}
-                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
-                          prod.inStock
-                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                            : 'bg-red-100 text-red-800 hover:bg-red-200'
-                        }`}
-                      >
-                        {prod.inStock ? t.product.inStock : t.product.outOfStock}
-                      </button>
+                      <div className="inline-flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => updateProduct(prod.id, { inStock: !prod.inStock })}
+                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors whitespace-nowrap ${
+                            prod.inStock
+                              ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                              : 'bg-red-100 text-red-800 hover:bg-red-200'
+                          }`}
+                        >
+                          {prod.inStock ? t.product.inStock : t.product.outOfStock}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingProduct(prod)}
+                          aria-label={t.admin.products.editBtn}
+                          title={t.admin.products.editBtn}
+                          className="p-2 rounded-lg bg-[#FAF7F2] hover:bg-[#F3ECE2] border border-[#2B1B17]/12 text-[#2B1B17]"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-[#D95D39]" />
+                        </button>
+                        {isConfirmingDelete ? (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                deleteProduct(prod.id);
+                                setConfirmDeleteProductId(null);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-red-600 text-white text-[11px] font-bold whitespace-nowrap"
+                            >
+                              {t.admin.products.confirmDelete}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteProductId(null)}
+                              className="p-1.5 rounded-lg bg-[#FAF7F2] text-[#2B1B17]"
+                              aria-label="Cancel"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteProductId(prod.id)}
+                            aria-label={t.admin.products.deleteBtn}
+                            title={t.admin.products.deleteBtn}
+                            className="p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-700"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1170,10 +1411,14 @@ export const AdminView: React.FC<AdminViewProps> = ({
         </nav>
 
         <AddProductModal
-          open={addModalOpen}
+          open={addModalOpen || Boolean(editingProduct)}
+          editingProduct={editingProduct}
           isMobileLayout
           isScopedFrame={isScopedFrame}
-          onClose={() => setAddModalOpen(false)}
+          onClose={() => {
+            setAddModalOpen(false);
+            setEditingProduct(null);
+          }}
         />
         {orderDetailOverlay}
       </div>
@@ -1228,9 +1473,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
       </div>
 
       <AddProductModal
-        open={addModalOpen}
+        open={addModalOpen || Boolean(editingProduct)}
+        editingProduct={editingProduct}
         isMobileLayout={false}
-        onClose={() => setAddModalOpen(false)}
+        onClose={() => {
+          setAddModalOpen(false);
+          setEditingProduct(null);
+        }}
       />
       {orderDetailOverlay}
     </div>
