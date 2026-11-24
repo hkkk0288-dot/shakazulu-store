@@ -226,6 +226,42 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidBannerSlide(banner) {
+      return banner is map &&
+        banner.keys().hasAll([
+          'id', 'titleEn', 'titleSw', 'subtitleEn', 'subtitleSw',
+          'ctaEn', 'ctaSw', 'target', 'gradientFrom', 'gradientTo'
+        ]) &&
+        banner.keys().hasOnly([
+          'id', 'titleEn', 'titleSw', 'subtitleEn', 'subtitleSw',
+          'ctaEn', 'ctaSw', 'target', 'image', 'gradientFrom', 'gradientTo'
+        ]) &&
+        isValidId(banner.id) &&
+        banner.titleEn is string && banner.titleEn.size() >= 1 && banner.titleEn.size() <= 140 &&
+        banner.titleSw is string && banner.titleSw.size() >= 1 && banner.titleSw.size() <= 140 &&
+        banner.subtitleEn is string && banner.subtitleEn.size() <= 300 &&
+        banner.subtitleSw is string && banner.subtitleSw.size() <= 300 &&
+        banner.ctaEn is string && banner.ctaEn.size() >= 1 && banner.ctaEn.size() <= 60 &&
+        banner.ctaSw is string && banner.ctaSw.size() >= 1 && banner.ctaSw.size() <= 60 &&
+        isValidId(banner.target) && banner.target.size() <= 64 &&
+        (!('image' in banner) || (banner.image is string && banner.image.size() <= 160000)) &&
+        banner.gradientFrom is string && banner.gradientFrom.size() <= 24 && banner.gradientFrom.matches('^#[0-9a-fA-F]{6}$') &&
+        banner.gradientTo is string && banner.gradientTo.size() <= 24 && banner.gradientTo.matches('^#[0-9a-fA-F]{6}$');
+    }
+
+    function isValidBrandingSettings(data) {
+      return data.keys().hasAll(['siteName', 'siteShortName', 'bannersEnabled', 'banners', 'updatedAt']) &&
+        data.keys().hasOnly(['siteName', 'siteShortName', 'logoUrl', 'bannersEnabled', 'banners', 'updatedAt']) &&
+        data.siteName is string && data.siteName.size() >= 1 && data.siteName.size() <= 60 &&
+        data.siteShortName is string && data.siteShortName.size() >= 1 && data.siteShortName.size() <= 32 &&
+        (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() <= 120000)) &&
+        data.bannersEnabled is bool &&
+        data.banners is list &&
+        data.banners.size() <= 6 &&
+        (data.banners.size() == 0 || isValidBannerSlide(data.banners[0])) &&
+        data.updatedAt is timestamp;
+    }
+
     // --- Collection Rules ---
 
     // Admins collection
@@ -325,11 +361,14 @@ service cloud.firestore {
 
     // Public store UI settings (non-PII, writable only by admins)
     match /storeSettings/{settingId} {
-      allow get: if isValidId(settingId) && settingId == 'splash';
+      allow get: if isValidId(settingId) && settingId in ['splash', 'branding'];
       allow list: if isAdmin();
-      allow create, update: if isAdmin() && isValidId(settingId) && settingId == 'splash' &&
-        isValidSplashSettings(incoming()) && incoming().updatedAt == request.time;
-      allow delete: if isAdmin() && isValidId(settingId) && settingId == 'splash';
+      allow create, update: if isAdmin() && isValidId(settingId) &&
+        incoming().updatedAt == request.time && (
+          (settingId == 'splash' && isValidSplashSettings(incoming())) ||
+          (settingId == 'branding' && isValidBrandingSettings(incoming()))
+        );
+      allow delete: if isAdmin() && isValidId(settingId) && settingId in ['splash', 'branding'];
     }
   }
 }

@@ -2,7 +2,12 @@
  * Compresses an uploaded image file in-browser via HTML5 Canvas
  * so it fits comfortably inside Firestore's document limit (< 350 KB Data URI).
  */
-export async function compressImageFile(file: File, maxDimension = 720, maxBytes = 320000): Promise<string> {
+export async function compressImageFile(
+  file: File,
+  maxDimension = 720,
+  maxBytes = 320000,
+  preserveTransparency = false
+): Promise<string> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -40,6 +45,24 @@ export async function compressImageFile(file: File, maxDimension = 720, maxBytes
     return dataUrl;
   }
   ctx.drawImage(img, 0, 0, width, height);
+
+  if (preserveTransparency && (file.type === 'image/png' || file.type === 'image/webp')) {
+    const pngResult = canvas.toDataURL('image/png');
+    if (pngResult.length <= maxBytes) {
+      return pngResult;
+    }
+    const smallerCanvas = document.createElement('canvas');
+    smallerCanvas.width = Math.max(1, Math.round(width * 0.65));
+    smallerCanvas.height = Math.max(1, Math.round(height * 0.65));
+    const smCtx = smallerCanvas.getContext('2d');
+    if (smCtx) {
+      smCtx.drawImage(canvas, 0, 0, smallerCanvas.width, smallerCanvas.height);
+      const smallerPng = smallerCanvas.toDataURL('image/png');
+      if (smallerPng.length <= maxBytes) {
+        return smallerPng;
+      }
+    }
+  }
 
   let quality = 0.82;
   let result = canvas.toDataURL('image/jpeg', quality);

@@ -40,6 +40,7 @@ import {
   getDisplayProductName,
   VACUUM_PACK_FEE_TZS,
 } from '../../utils/pricing';
+import { BrandMark } from '../common/BrandMark';
 import { ProductArtwork } from '../common/ProductArtwork';
 import { OrderTrackerModal } from './OrderTrackerModal';
 
@@ -76,6 +77,7 @@ export const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
     placeOrder,
     setAdminMode,
     unlockAdmin,
+    brandingConfig,
     t,
   } = useStore();
 
@@ -275,8 +277,11 @@ export const CheckoutFlow: React.FC<CheckoutFlowProps> = ({
           </p>
 
           <div className="mt-5 bg-[#FAF7F2] rounded-2xl p-4 text-left space-y-2 border border-[#2B1B17]/8">
-            <div className="flex items-center justify-between text-[10px] font-bold text-[#2B1B17]/55 uppercase tracking-wider pb-1 border-b border-[#2B1B17]/10">
-              <span>{t.brandName} · Dar es Salaam</span>
+            <div className="flex items-center justify-between text-[10px] font-bold text-[#2B1B17]/55 uppercase tracking-wider pb-1.5 border-b border-[#2B1B17]/10">
+              <span className="inline-flex items-center gap-1.5">
+                <BrandMark size="xs" />
+                <span>{brandingConfig.siteName} · Dar es Salaam</span>
+              </span>
               <span>{t.conversion.receiptTitle}</span>
             </div>
             <div className="flex items-center justify-between text-xs">

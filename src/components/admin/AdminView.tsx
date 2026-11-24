@@ -21,6 +21,7 @@ import {
   Search,
   ShoppingBag,
   Smartphone,
+  Sparkles,
   Tag,
   Trash2,
   TrendingUp,
@@ -37,8 +38,10 @@ import {
   USD_EXCHANGE_RATE,
 } from '../../utils/pricing';
 import { downloadCsv } from '../../utils/tracking';
+import { BrandMark } from '../common/BrandMark';
 import { ProductArtwork } from '../common/ProductArtwork';
 import { AddProductModal } from './AddProductModal';
+import { AdminBrandingManager } from './AdminBrandingManager';
 import { AdminSplashManager } from './AdminSplashManager';
 
 interface AdminViewProps {
@@ -85,6 +88,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
     deleteCategory,
     updateOrderStatus,
     resetDemoData,
+    brandingConfig,
     showToast,
     t,
   } = useStore();
@@ -460,6 +464,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
     { id: 'dashboard', label: t.admin.tabs.dashboard, icon: BarChart3 },
     { id: 'products', label: t.admin.tabs.products, icon: Box },
     { id: 'orders', label: t.admin.tabs.orders, icon: ShoppingBag },
+    { id: 'branding', label: t.admin.tabs.branding, icon: Sparkles },
     { id: 'splash', label: t.admin.tabs.splash, icon: Smartphone },
   ];
 
@@ -1681,6 +1686,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
           {activeTab === 'dashboard' && renderDashboard()}
           {activeTab === 'products' && renderProductsManager()}
           {activeTab === 'orders' && renderOrdersTracker()}
+          {activeTab === 'branding' && <AdminBrandingManager />}
           {activeTab === 'splash' && (
             <AdminSplashManager isMobileLayout isScopedFrame={isScopedFrame} />
           )}
@@ -1691,7 +1697,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
           aria-label="Admin Navigation"
           className={`no-print ${
             isScopedFrame ? 'absolute' : 'fixed'
-          } bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#2B1B17]/10 grid grid-cols-4 items-center h-[60px] pb-safe`}
+          } bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#2B1B17]/10 grid grid-cols-5 items-center h-[60px] pb-safe`}
         >
           {adminTabs.map((tab) => {
             const Icon = tab.icon;
@@ -1701,12 +1707,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`min-h-[48px] flex flex-col items-center justify-center gap-0.5 ${
+                className={`min-h-[48px] flex flex-col items-center justify-center gap-0.5 px-1 ${
                   active ? 'text-[#D95D39]' : 'text-[#2B1B17]/60'
                 }`}
               >
-                <Icon className="w-5 h-5" />
-                <span className="text-[10px] font-semibold">{tab.label}</span>
+                <Icon className="w-4 h-4" />
+                <span className="text-[10px] font-semibold truncate max-w-full">{tab.label}</span>
               </button>
             );
           })}
@@ -1734,11 +1740,14 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
       <div className="flex-1 flex max-w-7xl w-full mx-auto">
         <aside className="no-print w-60 shrink-0 border-r border-[#2B1B17]/10 bg-white p-4 space-y-1.5">
-          <div className="px-3 py-2 mb-2">
-            <div className="font-display font-extrabold text-base text-[#2B1B17]">
-              {t.brandName}
+          <div className="px-3 py-2 mb-2 flex items-center gap-2.5">
+            <BrandMark size="sm" />
+            <div className="min-w-0">
+              <div className="font-display font-extrabold text-sm text-[#2B1B17] truncate">
+                {brandingConfig.siteName}
+              </div>
+              <div className="text-[11px] text-[#2B1B17]/60 truncate">{t.admin.pinTitle}</div>
             </div>
-            <div className="text-[11px] text-[#2B1B17]/60">{t.admin.pinTitle}</div>
           </div>
 
           {adminTabs.map((tab) => {
@@ -1771,6 +1780,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
           {activeTab === 'dashboard' && renderDashboard()}
           {activeTab === 'products' && renderProductsManager()}
           {activeTab === 'orders' && renderOrdersTracker()}
+          {activeTab === 'branding' && <AdminBrandingManager />}
           {activeTab === 'splash' && <AdminSplashManager isMobileLayout={false} />}
         </main>
       </div>

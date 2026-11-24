@@ -189,6 +189,28 @@ export interface SplashConfig {
   slides: SplashSlide[];
 }
 
+export interface BannerSlide {
+  id: string;
+  titleEn: string;
+  titleSw: string;
+  subtitleEn: string;
+  subtitleSw: string;
+  ctaEn: string;
+  ctaSw: string;
+  target: string;
+  image?: string;
+  gradientFrom: string;
+  gradientTo: string;
+}
+
+export interface BrandingConfig {
+  siteName: string;
+  siteShortName: string;
+  logoUrl?: string;
+  bannersEnabled: boolean;
+  banners: BannerSlide[];
+}
+
 export type MobileTab = 'home' | 'categories' | 'wholesale' | 'cart' | 'more';
-export type AdminTab = 'dashboard' | 'products' | 'orders' | 'splash';
+export type AdminTab = 'dashboard' | 'products' | 'orders' | 'splash' | 'branding';
 export type PreviewMode = 'web' | 'app';

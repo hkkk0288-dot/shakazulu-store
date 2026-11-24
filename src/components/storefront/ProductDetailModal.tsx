@@ -26,7 +26,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   isScopedFrame = false,
   onClose,
 }) => {
-  const { language, currency, t, getCategoryLabel, addToCart, isInWishlist, toggleWishlist, showToast } = useStore();
+  const { language, currency, t, brandingConfig, getCategoryLabel, addToCart, isInWishlist, toggleWishlist, showToast } = useStore();
   const [size, setSize] = useState<SizeOption>(initialSize);
   const [qty, setQty] = useState<number>(1);
 
@@ -68,7 +68,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}/?product=${encodeURIComponent(product.id)}`;
-    const shareTitle = `${name} — ${t.brandName}`;
+    const shareTitle = `${name} — ${brandingConfig.siteName}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: shareTitle, text: description, url: shareUrl });

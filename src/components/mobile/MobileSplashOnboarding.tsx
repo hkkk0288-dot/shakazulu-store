@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowRight, PackageCheck, ShieldCheck, ShoppingBag, Truck } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { SplashConfig } from '../../types';
+import { BrandMark } from '../common/BrandMark';
 
 interface MobileSplashOnboardingProps {
   open: boolean;
@@ -18,7 +19,7 @@ export const MobileSplashOnboarding: React.FC<MobileSplashOnboardingProps> = ({
   overrideConfig,
   onFinish,
 }) => {
-  const { language, setLanguage, splashConfig, t } = useStore();
+  const { language, setLanguage, splashConfig, brandingConfig, t } = useStore();
   const [step, setStep] = useState(0);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
   const touchStartXRef = useRef<number | null>(null);
@@ -79,18 +80,16 @@ export const MobileSplashOnboarding: React.FC<MobileSplashOnboardingProps> = ({
       className={`${positionClass} inset-0 z-50 flex flex-col bg-[#2B1B17] text-[#FAF7F2] select-none overflow-hidden`}
       role="dialog"
       aria-modal="true"
-      aria-label={t.brandName}
+      aria-label={brandingConfig.siteName}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
       {/* Top Safe Control Bar: Brand, Language Switch, Skip */}
       <div className="relative z-20 flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
-        <div className="flex items-center gap-2 whitespace-nowrap shrink-0">
-          <span className="w-8 h-8 rounded-xl bg-[#D95D39] text-white font-display font-extrabold text-sm flex items-center justify-center shadow-sm">
-            S
-          </span>
-          <span className="font-display font-bold text-sm tracking-tight text-white">
-            {t.brandName}
+        <div className="flex items-center gap-2 whitespace-nowrap shrink-0 min-w-0">
+          <BrandMark size="sm" />
+          <span className="font-display font-bold text-sm tracking-tight text-white truncate max-w-[140px]">
+            {brandingConfig.siteName}
           </span>
         </div>
 

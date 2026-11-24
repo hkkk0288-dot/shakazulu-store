@@ -39,6 +39,7 @@ import {
   WHATSAPP_DISPLAY,
   WHATSAPP_NUMBER,
 } from '../../utils/pricing';
+import { BrandMark } from '../common/BrandMark';
 import { ProductArtwork } from '../common/ProductArtwork';
 import { PWAInstallButton } from '../common/PWAComponents';
 import { CheckoutFlow } from '../storefront/CheckoutFlow';
@@ -74,6 +75,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
     setAdminMode,
     addBundleToCart,
     splashConfig,
+    brandingConfig,
     t,
   } = useStore();
 
@@ -99,6 +101,7 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
   });
   const [promoIndex, setPromoIndex] = useState(0);
   const [isFilteringSkeleton, setIsFilteringSkeleton] = useState(false);
+  const promoTrackRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!hasActiveSplash && showSplash) {
@@ -169,11 +172,33 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
     [storeCategories]
   );
 
-  const promoGradients = [
-    'linear-gradient(135deg, #D95D39 0%, #8C1D18 100%)',
-    'linear-gradient(135deg, #2B1B17 0%, #5B3529 100%)',
-    'linear-gradient(135deg, #C97B4B 0%, #7F4F24 100%)',
-  ];
+  const activeBanners = useMemo(
+    () => (brandingConfig.bannersEnabled ? brandingConfig.banners : []),
+    [brandingConfig.bannersEnabled, brandingConfig.banners]
+  );
+
+  useEffect(() => {
+    if (promoIndex >= activeBanners.length && activeBanners.length > 0) {
+      setPromoIndex(0);
+    }
+  }, [promoIndex, activeBanners.length]);
+
+  const scrollToBannerSlide = (idx: number) => {
+    setPromoIndex(idx);
+    const el = promoTrackRef.current;
+    if (!el) return;
+    const width = el.clientWidth;
+    el.scrollTo({ left: idx * (width + 12), behavior: 'smooth' });
+  };
+
+  const handlePromoScroll = () => {
+    const el = promoTrackRef.current;
+    if (!el || el.clientWidth === 0) return;
+    const idx = Math.round(el.scrollLeft / (el.clientWidth + 12));
+    if (idx >= 0 && idx < activeBanners.length && idx !== promoIndex) {
+      setPromoIndex(idx);
+    }
+  };
 
   const tabs: { id: MobileTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'home', label: t.mobileTabs.home, icon: Home },
@@ -183,14 +208,15 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
     { id: 'more', label: t.mobileTabs.more, icon: Menu },
   ];
 
-  const handlePromoAction = (idx: number) => {
-    if (idx === 0) {
-      setSelectedCategory('ubuyu_achari');
-      setActiveTab('categories');
-    } else if (idx === 1) {
+  const handlePromoAction = (target: string) => {
+    if (target === 'wholesale') {
       setActiveTab('wholesale');
-    } else {
+    } else if (target === 'cart') {
       setActiveTab('cart');
+    } else {
+      setSavedOnly(false);
+      setSelectedCategory(target || 'all');
+      setActiveTab('categories');
     }
   };
 
@@ -254,13 +280,11 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('home')}
-              className="flex items-center gap-2 min-h-[44px] active:scale-95 transition-transform"
+              className="flex items-center gap-2 min-h-[44px] min-w-0 active:scale-95 transition-transform"
             >
-              <span className="w-7 h-7 rounded-lg bg-[#D95D39] text-white font-display font-bold text-sm flex items-center justify-center">
-                S
-              </span>
-              <span className="font-display font-extrabold text-base tracking-tight text-[#2B1B17]">
-                {t.brandShort}
+              <BrandMark size="xs" />
+              <span className="font-display font-extrabold text-base tracking-tight text-[#2B1B17] truncate">
+                {brandingConfig.siteShortName}
               </span>
             </button>
 
@@ -306,52 +330,91 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
         {/* HOME TAB */}
         {activeTab === 'home' && (
           <div className="space-y-5">
-            {/* Promo Carousel */}
-            <div>
-              <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory no-scrollbar">
-                {t.promos.map((promo, idx) => (
-                  <div
-                    key={promo.title}
-                    onMouseEnter={() => setPromoIndex(idx)}
-                    onClick={() => setPromoIndex(idx)}
-                    className="snap-center shrink-0 w-full rounded-2xl p-4 text-white relative overflow-hidden shadow-sm"
-                    style={{ background: promoGradients[idx % promoGradients.length] }}
-                  >
-                    <h2 className="font-display font-bold text-base leading-snug max-w-[85%]">
-                      {promo.title}
-                    </h2>
-                    <p className="text-xs text-white/85 mt-1 max-w-[90%] leading-relaxed">
-                      {promo.subtitle}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePromoAction(idx);
-                      }}
-                      className="mt-3 min-h-[36px] px-3.5 py-1.5 rounded-xl bg-white text-[#2B1B17] text-xs font-bold inline-flex items-center gap-1 active:scale-95 transition-transform"
-                    >
-                      <span>{promo.cta}</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
+            {/* Admin-Managed Slide Banners Carousel */}
+            {activeBanners.length > 0 && (
+              <div>
+                <div
+                  ref={promoTrackRef}
+                  onScroll={handlePromoScroll}
+                  className="flex gap-3 overflow-x-auto snap-x snap-mandatory no-scrollbar"
+                >
+                  {activeBanners.map((banner, idx) => {
+                    const bannerTitle =
+                      language === 'sw'
+                        ? banner.titleSw || banner.titleEn
+                        : banner.titleEn || banner.titleSw;
+                    const bannerSubtitle =
+                      language === 'sw'
+                        ? banner.subtitleSw || banner.subtitleEn
+                        : banner.subtitleEn || banner.subtitleSw;
+                    const bannerCta =
+                      language === 'sw'
+                        ? banner.ctaSw || banner.ctaEn
+                        : banner.ctaEn || banner.ctaSw;
+
+                    return (
+                      <div
+                        key={banner.id}
+                        onClick={() => scrollToBannerSlide(idx)}
+                        className="snap-center shrink-0 w-full rounded-2xl p-4 text-white relative overflow-hidden shadow-sm min-h-[144px] flex flex-col justify-end"
+                        style={{
+                          background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
+                        }}
+                      >
+                        {banner.image && (
+                          <img
+                            src={banner.image}
+                            alt={bannerTitle}
+                            referrerPolicy="no-referrer"
+                            className="absolute inset-0 w-full h-full object-cover"
+                          />
+                        )}
+                        <div
+                          aria-hidden="true"
+                          className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/45 to-black/15"
+                        />
+                        <div className="relative z-10">
+                          <h2 className="font-display font-bold text-base leading-snug max-w-[88%]">
+                            {bannerTitle}
+                          </h2>
+                          {bannerSubtitle && (
+                            <p className="text-xs text-white/85 mt-1 max-w-[92%] leading-relaxed line-clamp-2">
+                              {bannerSubtitle}
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePromoAction(banner.target);
+                            }}
+                            className="mt-3 min-h-[36px] px-3.5 py-1.5 rounded-xl bg-white text-[#2B1B17] text-xs font-bold inline-flex items-center gap-1 active:scale-95 transition-transform whitespace-nowrap"
+                          >
+                            <span>{bannerCta}</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {activeBanners.length > 1 && (
+                  <div className="flex items-center justify-center gap-1.5 mt-2">
+                    {activeBanners.map((b, idx) => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        aria-label={`Slide ${idx + 1}`}
+                        onClick={() => scrollToBannerSlide(idx)}
+                        className={`h-1.5 rounded-full transition-all ${
+                          promoIndex === idx ? 'w-5 bg-[#D95D39]' : 'w-1.5 bg-[#2B1B17]/20'
+                        }`}
+                      />
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-              {/* Carousel dots */}
-              <div className="flex items-center justify-center gap-1.5 mt-2">
-                {t.promos.map((_, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    aria-label={`Slide ${idx + 1}`}
-                    onClick={() => setPromoIndex(idx)}
-                    className={`h-1.5 rounded-full transition-all ${
-                      promoIndex === idx ? 'w-5 bg-[#D95D39]' : 'w-1.5 bg-[#2B1B17]/20'
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
+            )}
 
             {/* Category & Saved Favorites Chips */}
             <div className="flex gap-2 overflow-x-auto no-scrollbar py-0.5">
@@ -765,12 +828,16 @@ export const MobileStorefront: React.FC<MobileStorefrontProps> = ({
             <div className="bg-[#2B1B17] text-[#FAF7F2] rounded-3xl p-4 shadow-sm space-y-3.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-11 h-11 rounded-2xl bg-[#D95D39] text-white font-display font-extrabold text-base flex items-center justify-center shrink-0">
-                    {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'S'}
-                  </div>
+                  {user?.displayName ? (
+                    <div className="w-11 h-11 rounded-2xl bg-[#D95D39] text-white font-display font-extrabold text-base flex items-center justify-center shrink-0">
+                      {user.displayName.charAt(0).toUpperCase()}
+                    </div>
+                  ) : (
+                    <BrandMark size="lg" />
+                  )}
                   <div className="min-w-0">
                     <h1 className="font-display font-bold text-sm text-white truncate">
-                      {user?.displayName || t.brandName}
+                      {user?.displayName || brandingConfig.siteName}
                     </h1>
                     <p className="text-[11px] text-[#FAF7F2]/70 truncate">
                       {user?.email || t.moreTab.guestSubtitle}

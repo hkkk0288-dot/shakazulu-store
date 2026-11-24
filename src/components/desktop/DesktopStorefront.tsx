@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   ArrowRight,
   Check,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Filter,
   Gift,
@@ -40,6 +42,7 @@ import {
   WHATSAPP_DISPLAY,
   WHATSAPP_NUMBER,
 } from '../../utils/pricing';
+import { BrandMark } from '../common/BrandMark';
 import { ProductArtwork } from '../common/ProductArtwork';
 import { PWAInstallButton } from '../common/PWAComponents';
 import { CheckoutFlow } from '../storefront/CheckoutFlow';
@@ -74,6 +77,7 @@ export const DesktopStorefront: React.FC = () => {
     addBundleToCart,
     updateCartItemQuantity,
     removeFromCart,
+    brandingConfig,
     t,
   } = useStore();
 
@@ -92,7 +96,27 @@ export const DesktopStorefront: React.FC = () => {
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [myOrdersOpen, setMyOrdersOpen] = useState(false);
+  const [bannerIndex, setBannerIndex] = useState(0);
   const deepLinkHandledRef = useRef(false);
+
+  const activeBanners = useMemo(
+    () => (brandingConfig.bannersEnabled ? brandingConfig.banners : []),
+    [brandingConfig.bannersEnabled, brandingConfig.banners]
+  );
+
+  useEffect(() => {
+    if (bannerIndex >= activeBanners.length && activeBanners.length > 0) {
+      setBannerIndex(0);
+    }
+  }, [bannerIndex, activeBanners.length]);
+
+  useEffect(() => {
+    if (activeBanners.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setBannerIndex((prev) => (prev + 1) % activeBanners.length);
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [activeBanners.length]);
 
   useEffect(() => {
     if (deepLinkHandledRef.current || products.length === 0) return;
@@ -184,6 +208,18 @@ export const DesktopStorefront: React.FC = () => {
     setSelectedCategory('all');
     setPriceRange('all');
     scrollToSection('catalog-section');
+  };
+
+  const handleBannerAction = (target: string) => {
+    if (target === 'wholesale') {
+      handleWholesaleFocus();
+    } else if (target === 'cart') {
+      setCartDrawerOpen(true);
+    } else {
+      setSavedOnly(false);
+      setSelectedCategory(target || 'all');
+      scrollToSection('catalog-section');
+    }
   };
 
   const resetFilters = () => {
@@ -378,12 +414,10 @@ export const DesktopStorefront: React.FC = () => {
               e.preventDefault();
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className="font-display text-xl font-extrabold tracking-tight text-[#2B1B17] whitespace-nowrap shrink-0 flex items-center gap-2"
+            className="font-display text-xl font-extrabold tracking-tight text-[#2B1B17] whitespace-nowrap shrink-0 flex items-center gap-2.5"
           >
-            <span className="w-8 h-8 rounded-xl bg-[#D95D39] text-white flex items-center justify-center text-base font-bold">
-              S
-            </span>
-            <span>{t.brandName}</span>
+            <BrandMark size="sm" />
+            <span>{brandingConfig.siteName}</span>
           </a>
 
           {/* Wide Search Bar */}
@@ -525,6 +559,116 @@ export const DesktopStorefront: React.FC = () => {
             </div>
           </div>
         </section>
+
+        {/* Admin-Managed Promotional Slide Banner Carousel */}
+        {activeBanners.length > 0 && (
+          <section className="max-w-7xl mx-auto px-6 pb-8">
+            <div className="relative rounded-3xl overflow-hidden shadow-sm border border-[#2B1B17]/10">
+              <div
+                className="flex transition-transform duration-500 ease-out"
+                style={{ transform: `translateX(-${bannerIndex * 100}%)` }}
+              >
+                {activeBanners.map((banner) => {
+                  const bannerTitle =
+                    language === 'sw'
+                      ? banner.titleSw || banner.titleEn
+                      : banner.titleEn || banner.titleSw;
+                  const bannerSubtitle =
+                    language === 'sw'
+                      ? banner.subtitleSw || banner.subtitleEn
+                      : banner.subtitleEn || banner.subtitleSw;
+                  const bannerCta =
+                    language === 'sw'
+                      ? banner.ctaSw || banner.ctaEn
+                      : banner.ctaEn || banner.ctaSw;
+
+                  return (
+                    <div
+                      key={banner.id}
+                      className="w-full shrink-0 relative min-h-[196px] md:min-h-[216px] px-8 md:px-12 py-8 flex items-center justify-between gap-6 text-white"
+                      style={{
+                        background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
+                      }}
+                    >
+                      {banner.image && (
+                        <img
+                          src={banner.image}
+                          alt={bannerTitle}
+                          referrerPolicy="no-referrer"
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
+                      )}
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/20"
+                      />
+                      <div className="relative z-10 max-w-xl space-y-2">
+                        <h2 className="font-display font-extrabold text-2xl md:text-3xl leading-tight">
+                          {bannerTitle}
+                        </h2>
+                        {bannerSubtitle && (
+                          <p className="text-sm text-white/85 leading-relaxed max-w-lg">
+                            {bannerSubtitle}
+                          </p>
+                        )}
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => handleBannerAction(banner.target)}
+                            className="min-h-[44px] px-5 py-2.5 rounded-xl bg-white hover:bg-[#FAF7F2] text-[#2B1B17] text-xs font-bold inline-flex items-center gap-2 shadow-sm active:scale-95 transition-transform whitespace-nowrap"
+                          >
+                            <span>{bannerCta}</span>
+                            <ArrowRight className="w-4 h-4 text-[#D95D39]" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {activeBanners.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Previous banner"
+                    onClick={() =>
+                      setBannerIndex((prev) =>
+                        prev === 0 ? activeBanners.length - 1 : prev - 1
+                      )
+                    }
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/40 hover:bg-black/65 text-white flex items-center justify-center backdrop-blur-xs transition-colors"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Next banner"
+                    onClick={() =>
+                      setBannerIndex((prev) => (prev + 1) % activeBanners.length)
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/40 hover:bg-black/65 text-white flex items-center justify-center backdrop-blur-xs transition-colors"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                  <div className="absolute bottom-3.5 right-6 z-20 flex items-center gap-1.5">
+                    {activeBanners.map((b, idx) => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        aria-label={`Banner ${idx + 1}`}
+                        onClick={() => setBannerIndex(idx)}
+                        className={`h-2 rounded-full transition-all ${
+                          bannerIndex === idx ? 'w-6 bg-[#F4A261]' : 'w-2 bg-white/45 hover:bg-white/75'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Curated Value Combo Boxes */}
         <section className="max-w-7xl mx-auto px-6 pb-6">
@@ -875,10 +1019,8 @@ export const DesktopStorefront: React.FC = () => {
         <div className="max-w-7xl mx-auto px-6 py-12 grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="md:col-span-2 space-y-3">
             <div className="font-display text-lg font-extrabold text-[#2B1B17] flex items-center gap-2">
-              <span className="w-7 h-7 rounded-lg bg-[#D95D39] text-white flex items-center justify-center text-sm">
-                S
-              </span>
-              {t.brandName}
+              <BrandMark size="xs" />
+              <span>{brandingConfig.siteName}</span>
             </div>
             <p className="text-sm text-[#2B1B17]/70 max-w-md">{t.footer.tagline}</p>
             <p className="text-xs text-[#2B1B17]/55">{t.footer.hours}</p>
@@ -953,7 +1095,7 @@ export const DesktopStorefront: React.FC = () => {
           </div>
         </div>
         <div className="border-t border-[#2B1B17]/8 py-4 px-6 text-center text-xs text-[#2B1B17]/55">
-          {t.footer.rights}
+          © 2026 {brandingConfig.siteName} · Dar es Salaam, Tanzania
         </div>
       </footer>
 

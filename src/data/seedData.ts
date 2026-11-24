@@ -1,4 +1,13 @@
-import { CategoryItem, ComboBundle, Coupon, CustomerReview, Order, Product, SplashConfig } from '../types';
+import {
+  BrandingConfig,
+  CategoryItem,
+  ComboBundle,
+  Coupon,
+  CustomerReview,
+  Order,
+  Product,
+  SplashConfig,
+} from '../types';
 
 export const SEED_CATEGORIES: CategoryItem[] = [
   { id: 'ubuyu_achari', nameEn: 'Ubuyu & Achari', nameSw: 'Ubuyu & Achari' },
@@ -640,4 +649,52 @@ export const DEFAULT_SPLASH_CONFIG: SplashConfig = {
     },
   ],
 };
+
+export const DEFAULT_BRANDING_CONFIG: BrandingConfig = {
+  siteName: 'Shakazulu Store',
+  siteShortName: 'Shakazulu',
+  bannersEnabled: true,
+  banners: [
+    {
+      id: 'banner-ubuyu',
+      titleEn: 'Fresh Zanzibar Ubuyu Batch',
+      titleSw: 'Ubuyu Mpya wa Zanzibar',
+      subtitleEn: 'Red, Cream & Spicy Mango Achari — packed daily in Dar es Salaam.',
+      subtitleSw: 'Mwekundu, mweupe wa iliki na achari ya embe — vinafungwa kila siku.',
+      ctaEn: 'Shop Ubuyu',
+      ctaSw: 'Nunua Ubuyu',
+      target: 'ubuyu_achari',
+      image: '/src/assets/images/product_red_ubuyu_1795463732331.jpg',
+      gradientFrom: '#D95D39',
+      gradientTo: '#8C1D18',
+    },
+    {
+      id: 'banner-wholesale',
+      titleEn: 'Wholesale 5kg Bulk Buckets',
+      titleSw: 'Ndoo za Jumla za 5kg',
+      subtitleEn: 'Save up to 20% automatically on 5kg buckets or any 5+ packs.',
+      subtitleSw: 'Okoa hadi 20% moja kwa moja ukichagua 5kg au pakiti 5+.',
+      ctaEn: 'View Bulk Deals',
+      ctaSw: 'Angalia Bei za Jumla',
+      target: 'wholesale',
+      image: '/src/assets/images/product_roasted_cashews_1795463732839.jpg',
+      gradientFrom: '#2B1B17',
+      gradientTo: '#5B3529',
+    },
+    {
+      id: 'banner-export',
+      titleEn: 'Vacuum-Packed Export Orders',
+      titleSw: 'Usafirishaji wa Vacuum Nje ya Nchi',
+      subtitleEn: 'Airtight sealing (+3,000 TZS) for UK, US, UAE & Mikoani bus parcels.',
+      subtitleSw: 'Vifungashio visivyoingia hewa (+3,000 TZS) kwa UK, US, UAE na Mikoani.',
+      ctaEn: 'Explore Export',
+      ctaSw: 'Agiza kwa Safari',
+      target: 'cart',
+      image: '/src/assets/images/product_pilau_masala_1795463732824.jpg',
+      gradientFrom: '#C97B4B',
+      gradientTo: '#7F4F24',
+    },
+  ],
+};
+
 

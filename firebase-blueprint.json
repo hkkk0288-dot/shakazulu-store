@@ -541,6 +541,44 @@
         }
       },
       "required": ["enabled", "slides", "updatedAt"]
+    },
+    "BrandingSettings": {
+      "title": "BrandingSettings",
+      "description": "Website name, custom logo, and promotional slide banners managed by store admins.",
+      "type": "object",
+      "properties": {
+        "siteName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Full storefront website title."
+        },
+        "siteShortName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "Short brand name displayed in compact headers."
+        },
+        "logoUrl": {
+          "type": "string",
+          "maxLength": 120000,
+          "description": "Optional store logo image URL or compressed data URI."
+        },
+        "bannersEnabled": {
+          "type": "boolean",
+          "description": "Whether promotional slide banners are shown on storefronts."
+        },
+        "banners": {
+          "type": "array",
+          "description": "Up to 6 promotional slide banners shown on mobile and desktop."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": ["siteName", "siteShortName", "bannersEnabled", "banners", "updatedAt"]
     }
   },
   "firestore": {
@@ -574,7 +612,7 @@
     },
     "/storeSettings/{settingId}": {
       "schema": { "$ref": "#/entities/SplashSettings" },
-      "description": "Publicly readable store UI settings (e.g. splash screen configuration), writable only by admins."
+      "description": "Publicly readable store UI settings (splash and branding/banners), writable only by admins."
     }
   }
 }

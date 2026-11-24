@@ -16,7 +16,14 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { DEFAULT_SPLASH_CONFIG, SEED_CATEGORIES, SEED_COUPONS, SEED_ORDERS, SEED_PRODUCTS } from '../data/seedData';
+import {
+  DEFAULT_BRANDING_CONFIG,
+  DEFAULT_SPLASH_CONFIG,
+  SEED_CATEGORIES,
+  SEED_COUPONS,
+  SEED_ORDERS,
+  SEED_PRODUCTS,
+} from '../data/seedData';
 import {
   ADMIN_EMAIL,
   auth,
@@ -27,6 +34,8 @@ import {
 } from '../firebase';
 import { getTranslations } from '../i18n/translations';
 import {
+  BannerSlide,
+  BrandingConfig,
   CartItem,
   CategoryItem,
   ComboBundle,
@@ -62,6 +71,7 @@ const STORAGE_KEYS = {
   coupons: 'shakazulu_coupons_v1',
   categories: 'shakazulu_categories_v1',
   splash: 'shakazulu_splash_config_v1',
+  branding: 'shakazulu_branding_config_v1',
 };
 
 function sanitizeHexColor(raw: unknown, fallback: string): string {
@@ -92,6 +102,58 @@ function sanitizeSplashSlide(raw: SplashSlide, index: number): SplashSlide {
     gradientFrom: sanitizeHexColor(raw.gradientFrom, '#D95D39'),
     gradientTo: sanitizeHexColor(raw.gradientTo, '#2B1B17'),
     ...(cleanImage ? { image: cleanImage } : {}),
+  };
+}
+
+function sanitizeBannerSlide(raw: BannerSlide, index: number): BannerSlide {
+  const cleanId =
+    (raw.id || `banner-${index + 1}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) ||
+    `banner-${index + 1}`;
+  const cleanTitleEn = (raw.titleEn || raw.titleSw || 'Shakazulu Store').trim().slice(0, 140);
+  const cleanTitleSw = (raw.titleSw || raw.titleEn || 'Shakazulu Store').trim().slice(0, 140);
+  const cleanCtaEn = (raw.ctaEn || raw.ctaSw || 'Shop Now').trim().slice(0, 60);
+  const cleanCtaSw = (raw.ctaSw || raw.ctaEn || 'Nunua Sasa').trim().slice(0, 60);
+  const cleanTarget =
+    (raw.target || 'all').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || 'all';
+  const cleanImage =
+    typeof raw.image === 'string' && raw.image.trim().length > 0 && raw.image.trim().length <= 160000
+      ? raw.image.trim()
+      : undefined;
+
+  return {
+    id: cleanId,
+    titleEn: cleanTitleEn,
+    titleSw: cleanTitleSw,
+    subtitleEn: (raw.subtitleEn || '').trim().slice(0, 300),
+    subtitleSw: (raw.subtitleSw || '').trim().slice(0, 300),
+    ctaEn: cleanCtaEn,
+    ctaSw: cleanCtaSw,
+    target: cleanTarget,
+    gradientFrom: sanitizeHexColor(raw.gradientFrom, '#D95D39'),
+    gradientTo: sanitizeHexColor(raw.gradientTo, '#8C1D18'),
+    ...(cleanImage ? { image: cleanImage } : {}),
+  };
+}
+
+function sanitizeBrandingConfig(raw: Partial<BrandingConfig>): BrandingConfig {
+  const siteName =
+    (raw.siteName || DEFAULT_BRANDING_CONFIG.siteName).trim().slice(0, 60) ||
+    DEFAULT_BRANDING_CONFIG.siteName;
+  const fallbackShort = siteName.split(/\s+/)[0] || siteName;
+  const siteShortName =
+    (raw.siteShortName || fallbackShort).trim().slice(0, 32) || fallbackShort.slice(0, 32);
+  const cleanLogo =
+    typeof raw.logoUrl === 'string' && raw.logoUrl.trim().length > 0 && raw.logoUrl.trim().length <= 120000
+      ? raw.logoUrl.trim()
+      : undefined;
+  const rawBanners = Array.isArray(raw.banners) ? raw.banners : DEFAULT_BRANDING_CONFIG.banners;
+
+  return {
+    siteName,
+    siteShortName,
+    ...(cleanLogo ? { logoUrl: cleanLogo } : {}),
+    bannersEnabled: typeof raw.bannersEnabled === 'boolean' ? raw.bannersEnabled : true,
+    banners: rawBanners.slice(0, 6).map((b, idx) => sanitizeBannerSlide(b, idx)),
   };
 }
 
@@ -188,6 +250,9 @@ interface StoreContextValue {
   splashConfig: SplashConfig;
   updateSplashConfig: (config: SplashConfig) => void;
   resetSplashConfig: () => void;
+  brandingConfig: BrandingConfig;
+  updateBrandingConfig: (config: BrandingConfig) => void;
+  resetBrandingConfig: () => void;
   resetDemoData: () => void;
   cartSummary: {
     itemCount: number;
@@ -226,6 +291,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     safeReadStorage<SplashConfig>(STORAGE_KEYS.splash, DEFAULT_SPLASH_CONFIG)
   );
   const [cloudSplashConfig, setCloudSplashConfig] = useState<SplashConfig | null>(null);
+  const [localBrandingConfig, setLocalBrandingConfig] = useState<BrandingConfig>(() =>
+    sanitizeBrandingConfig(
+      safeReadStorage<BrandingConfig>(STORAGE_KEYS.branding, DEFAULT_BRANDING_CONFIG)
+    )
+  );
+  const [cloudBrandingConfig, setCloudBrandingConfig] = useState<BrandingConfig | null>(null);
   const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
 
   const [cart, setCart] = useState<CartItem[]>(() =>
@@ -399,6 +470,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => unsub();
   }, []);
 
+  // Real-time Store Branding & Slide Banners listener (/storeSettings/branding)
+  useEffect(() => {
+    const brandingRef = doc(db, 'storeSettings', 'branding');
+    const unsub = onSnapshot(
+      brandingRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setCloudBrandingConfig(null);
+          return;
+        }
+        const data = snap.data() as Partial<BrandingConfig>;
+        setCloudBrandingConfig(sanitizeBrandingConfig(data));
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'storeSettings/branding');
+      }
+    );
+    return () => unsub();
+  }, []);
+
   // Real-time Orders listener (ONLY attached when auth is ready and user is authenticated)
   useEffect(() => {
     if (!authReady || !user || !user.emailVerified) {
@@ -533,7 +624,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     safeWriteStorage(STORAGE_KEYS.splash, localSplashConfig);
   }, [localSplashConfig]);
 
+  useEffect(() => {
+    safeWriteStorage(STORAGE_KEYS.branding, localBrandingConfig);
+  }, [localBrandingConfig]);
+
   const splashConfig = cloudSplashConfig ?? localSplashConfig;
+  const brandingConfig = cloudBrandingConfig ?? localBrandingConfig;
+
+  useEffect(() => {
+    if (typeof document !== 'undefined' && brandingConfig.siteName) {
+      document.title = brandingConfig.siteName;
+    }
+  }, [brandingConfig.siteName]);
 
   useEffect(() => {
     safeWriteStorage(STORAGE_KEYS.cart, cart);
@@ -1463,17 +1565,67 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     updateSplashConfig(DEFAULT_SPLASH_CONFIG);
   }, [updateSplashConfig]);
 
+  const updateBrandingConfig = useCallback(
+    (nextConfig: BrandingConfig) => {
+      const sanitized = sanitizeBrandingConfig(nextConfig);
+
+      if (isCloudAdmin) {
+        const firestoreBanners = sanitized.banners.map((b) => {
+          const obj: Record<string, unknown> = {
+            id: b.id,
+            titleEn: b.titleEn,
+            titleSw: b.titleSw,
+            subtitleEn: b.subtitleEn,
+            subtitleSw: b.subtitleSw,
+            ctaEn: b.ctaEn,
+            ctaSw: b.ctaSw,
+            target: b.target,
+            gradientFrom: b.gradientFrom,
+            gradientTo: b.gradientTo,
+          };
+          if (b.image) obj.image = b.image;
+          return obj;
+        });
+
+        const payload: Record<string, unknown> = {
+          siteName: sanitized.siteName,
+          siteShortName: sanitized.siteShortName,
+          bannersEnabled: sanitized.bannersEnabled,
+          banners: firestoreBanners,
+          updatedAt: serverTimestamp(),
+        };
+        if (sanitized.logoUrl) {
+          payload.logoUrl = sanitized.logoUrl;
+        }
+
+        setDoc(doc(db, 'storeSettings', 'branding'), payload).catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, 'storeSettings/branding')
+        );
+      } else {
+        setLocalBrandingConfig(sanitized);
+      }
+      showToast(t.admin.branding.savedToast);
+    },
+    [isCloudAdmin, showToast, t.admin.branding.savedToast]
+  );
+
+  const resetBrandingConfig = useCallback(() => {
+    updateBrandingConfig(DEFAULT_BRANDING_CONFIG);
+  }, [updateBrandingConfig]);
+
   const resetDemoData = useCallback(() => {
     setLocalProducts(SEED_PRODUCTS);
     setLocalCategories(SEED_CATEGORIES);
     setLocalOrders(SEED_ORDERS);
     setLocalSplashConfig(DEFAULT_SPLASH_CONFIG);
+    setLocalBrandingConfig(DEFAULT_BRANDING_CONFIG);
     setCart([]);
     setVacuumPackedState(false);
     safeWriteStorage(STORAGE_KEYS.products, SEED_PRODUCTS);
     safeWriteStorage(STORAGE_KEYS.categories, SEED_CATEGORIES);
     safeWriteStorage(STORAGE_KEYS.orders, SEED_ORDERS);
     safeWriteStorage(STORAGE_KEYS.splash, DEFAULT_SPLASH_CONFIG);
+    safeWriteStorage(STORAGE_KEYS.branding, DEFAULT_BRANDING_CONFIG);
     safeWriteStorage(STORAGE_KEYS.cart, []);
     showToast(t.admin.resetDone);
   }, [showToast, t.admin.resetDone]);
@@ -1533,6 +1685,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     splashConfig,
     updateSplashConfig,
     resetSplashConfig,
+    brandingConfig,
+    updateBrandingConfig,
+    resetBrandingConfig,
     resetDemoData,
     cartSummary,
   };
